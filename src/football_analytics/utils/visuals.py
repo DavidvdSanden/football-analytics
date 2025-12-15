@@ -271,7 +271,8 @@ def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
 
 def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=5,
                                  zero_transparent=True, colorscale='YlOrRd',
-                                 shrink=True, prior_shots=5.0, show_ci=True, ci_level=0.95):
+                                 shrink=True, prior_shots=5.0, show_ci=True, ci_level=0.95,
+                                 plot_3d=False, height='conversion', height_scale=0.5):
     """
     Plot a heatmap showing the percentage of shots converted to goals per bin.
 
@@ -291,6 +292,14 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
         If True, bins with no shots (or below `min_shots`) will be transparent.
     colorscale : str or list
         Plotly colorscale for the conversion heatmap.
+    plot_3d : bool
+        If True, render the conversion heatmap as a 3D surface with the pitch at z=0
+        and bin values shown along the z-axis.
+    height : {'conversion', 'shots'}
+        Which value to use for the z-axis when `plot_3d` is True: 'conversion'
+        (percent) or 'shots' (raw shot counts).
+    height_scale : float
+        Multiplier applied to the z values for better visual scaling in 3D.
     """
     if isinstance(shots, list):
         shots = pd.DataFrame(shots)
@@ -328,9 +337,11 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
     shots_count, x_edges_out, y_edges_out = np.histogram2d(xs, ys, bins=[x_edges, y_edges])
     goals_count, _, _ = np.histogram2d(xs, ys, bins=[x_edges, y_edges], weights=goals_mask)
 
-    # Observed conversion rate (goals / shots)
-    with np.errstate(divide='ignore', invalid='ignore'):
-        obs_conv = np.where(shots_count > 0, goals_count / shots_count, np.nan)
+    # Observed conversion rate (goals / shots) — compute safely to avoid divide warnings
+    obs_conv = np.full_like(shots_count, np.nan, dtype=float)
+    mask_shots = shots_count > 0
+    if np.any(mask_shots):
+        obs_conv[mask_shots] = goals_count[mask_shots] / shots_count[mask_shots]
 
     # Shrinkage (empirical Bayes / pseudocounts) to avoid extreme rates in tiny bins
     total_shots = shots_count.sum()
@@ -370,21 +381,27 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
                 zval = 1.645
             else:
                 zval = 1.96
-        phat = np.where(shots_count > 0, goals_count / shots_count, 0.0)
+        # compute phat safely (avoid dividing where shots_count == 0)
+        phat = np.zeros_like(shots_count, dtype=float)
+        mask = shots_count > 0
+        if np.any(mask):
+            phat[mask] = goals_count[mask] / shots_count[mask]
         n = shots_count
-        with np.errstate(divide='ignore', invalid='ignore'):
-            den = 1 + (zval ** 2) / n
-            center = phat + (zval ** 2) / (2 * n)
-            adj = zval * np.sqrt((phat * (1 - phat) + (zval ** 2) / (4 * n)) / n)
-            wilson_low = np.where(n > 0, (center - adj) / den, np.nan)
-            wilson_high = np.where(n > 0, (center + adj) / den, np.nan)
+        # compute Wilson CI only where n > 0 to avoid invalid divides
+        wilson_low = np.full_like(n, np.nan, dtype=float)
+        wilson_high = np.full_like(n, np.nan, dtype=float)
+        maskn = n > 0
+        if np.any(maskn):
+            den = 1 + (zval ** 2) / n[maskn]
+            center = phat[maskn] + (zval ** 2) / (2 * n[maskn])
+            adj = zval * np.sqrt((phat[maskn] * (1 - phat[maskn]) + (zval ** 2) / (4 * n[maskn])) / n[maskn])
+            wilson_low[maskn] = (center - adj) / den
+            wilson_high[maskn] = (center + adj) / den
     else:
         wilson_low = wilson_high = None
 
     x_centers = (x_edges_out[:-1] + x_edges_out[1:]) / 2
     y_centers = (y_edges_out[:-1] + y_edges_out[1:]) / 2
-
-    fig = create_pitch()
 
     # Build per-cell hover text (including shrunk conversion and CI if requested)
     XX, YY = np.meshgrid(x_centers, y_centers)
@@ -414,6 +431,146 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
             else:
                 hover_texts[i, j] = f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}"
 
+    # If 3D requested, render as 3D surface(s)
+    if plot_3d:
+        # X, Y grids for surfaces
+        X, Y = np.meshgrid(x_centers, y_centers)
+
+        # Choose z-values for height
+        if height == 'shots':
+            Z = shots_count.T.astype(float)
+            z_title = 'Shots'
+        else:
+            # use conversion percent (may contain nan for filtered bins)
+            Z = z.copy()
+            z_title = 'Conversion (%)'
+
+        # apply scaling
+        Z_scaled = Z * float(height_scale)
+
+        fig3d = go.Figure()
+
+        # base pitch plane at z=0
+        base_z = np.zeros_like(Z_scaled)
+        fig3d.add_trace(go.Surface(
+            x=X, y=Y, z=base_z,
+            surfacecolor=np.zeros_like(base_z),
+            colorscale=[[0, '#6BBF59'], [1, '#6BBF59']],
+            showscale=False,
+            opacity=0.9,
+            hoverinfo='skip',
+            showlegend=False
+        ))
+
+        # Add 3D line traces to replicate pitch markings (match create_pitch styling)
+        pitch_length = 120
+        pitch_width = 80
+        center_y = pitch_width / 2
+        pen_box_width = 44
+        pen_box_depth = 18
+        gk_box_width = 20
+        gk_box_depth = 6
+        goal_width = 8
+        goal_depth = 0.1
+        penalty_spot = 12
+        arc_radius = 10
+
+        z0 = 0.0
+        # Utility to add a 3d line
+        def add_line(xs, ys, width=4, name=None):
+            fig3d.add_trace(go.Scatter3d(x=xs, y=ys, z=[z0] * len(xs), mode='lines',
+                                        line=dict(color='white', width=width), hoverinfo='skip', showlegend=False))
+
+        # Pitch boundary
+        xb = [0, pitch_length, pitch_length, 0, 0]
+        yb = [0, 0, pitch_width, pitch_width, 0]
+        add_line(xb, yb, width=6)
+
+        # Center line
+        add_line([pitch_length / 2, pitch_length / 2], [0, pitch_width], width=4)
+
+        # Center circle
+        theta = np.linspace(0, 2 * np.pi, 120)
+        xc = (pitch_length / 2) + 10 * np.cos(theta)
+        yc = center_y + 10 * np.sin(theta)
+        add_line(xc.tolist(), yc.tolist(), width=4)
+
+        # Penalty boxes
+        left_pen = [0, pen_box_depth, pen_box_depth, 0, 0]
+        left_pen_y = [center_y - pen_box_width / 2, center_y - pen_box_width / 2,
+                      center_y + pen_box_width / 2, center_y + pen_box_width / 2,
+                      center_y - pen_box_width / 2]
+        add_line(left_pen, left_pen_y, width=4)
+        right_pen = [pitch_length, pitch_length - pen_box_depth, pitch_length - pen_box_depth, pitch_length, pitch_length]
+        right_pen_y = left_pen_y
+        add_line(right_pen, right_pen_y, width=4)
+
+        # Goalkeeper boxes
+        left_gk = [0, gk_box_depth, gk_box_depth, 0, 0]
+        left_gk_y = [center_y - gk_box_width / 2, center_y - gk_box_width / 2,
+                     center_y + gk_box_width / 2, center_y + gk_box_width / 2,
+                     center_y - gk_box_width / 2]
+        add_line(left_gk, left_gk_y, width=4)
+        right_gk = [pitch_length, pitch_length - gk_box_depth, pitch_length - gk_box_depth, pitch_length, pitch_length]
+        add_line(right_gk, left_gk_y, width=4)
+
+        # Goals (thicker)
+        add_line([-goal_depth, 0], [center_y - goal_width / 2, center_y - goal_width / 2], width=8)
+        add_line([-goal_depth, 0], [center_y + goal_width / 2, center_y + goal_width / 2], width=8)
+        add_line([pitch_length, pitch_length + goal_depth], [center_y - goal_width / 2, center_y - goal_width / 2], width=8)
+        add_line([pitch_length, pitch_length + goal_depth], [center_y + goal_width / 2, center_y + goal_width / 2], width=8)
+
+        # Penalty spots
+        fig3d.add_trace(go.Scatter3d(x=[penalty_spot], y=[center_y], z=[z0], mode='markers',
+                         marker=dict(size=4, color='white'), hoverinfo='skip', showlegend=False))
+        fig3d.add_trace(go.Scatter3d(x=[pitch_length - penalty_spot], y=[center_y], z=[z0], mode='markers',
+                         marker=dict(size=4, color='white'), hoverinfo='skip', showlegend=False))
+
+        # Penalty arcs (left and right)
+        d = pen_box_depth - penalty_spot
+        angle = np.arccos(d / arc_radius)
+        theta_left = np.linspace(-angle, angle, 75)
+        theta_right = np.linspace(np.pi - angle, np.pi + angle, 75)
+        xs_left = (penalty_spot + arc_radius * np.cos(theta_left)).tolist()
+        ys_left = (center_y + arc_radius * np.sin(theta_left)).tolist()
+        add_line(xs_left, ys_left, width=4)
+        xs_right = (pitch_length - penalty_spot + arc_radius * np.cos(theta_right)).tolist()
+        ys_right = (center_y + arc_radius * np.sin(theta_right)).tolist()
+        add_line(xs_right, ys_right, width=4)
+
+        # conversion / shots surface (holes where NaN)
+        fig3d.add_trace(go.Surface(
+            x=X, y=Y, z=Z_scaled,
+            surfacecolor=Z,  # color by original values (percent or counts)
+            colorscale=colorscale,
+            cmin=np.nanmin(Z) if np.isfinite(np.nanmin(Z)) else 0,
+            cmax=np.nanmax(Z) if np.isfinite(np.nanmax(Z)) else 1,
+            colorbar=dict(title=z_title, ticksuffix='%' if z_title.startswith('Conversion') else ''),
+            hovertemplate='%{x:.1f}, %{y:.1f}<br>' + z_title + ': %{customdata[0]:.2f}<br>Shots: %{customdata[1]:.0f}',
+            customdata=np.dstack((np.nan_to_num(Z, nan=np.nan), shots_count.T)),
+            showscale=True,
+            opacity=0.9,
+            showlegend=False
+        ))
+
+        # camera & layout
+        max_z = np.nanmax(Z_scaled)
+        fig3d.update_layout(
+            title='Shot Conversion Heatmap (3D)',
+            scene=dict(
+                xaxis=dict(title='X', range=[0, 120]),
+                yaxis=dict(title='Y', range=[0, 80]),
+                zaxis=dict(title=z_title, range=[0, float(max_z * 1.2) if np.isfinite(max_z) else 1]),
+                aspectmode='auto'
+            ),
+            width=1200, height=800
+        )
+
+        return fig3d
+
+    # 2D heatmap (existing behavior)
+    fig = create_pitch()
+
     fig.add_trace(go.Heatmap(
         x=x_centers,
         y=y_centers,
@@ -433,7 +590,7 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
     fig.data = tuple(others + heatmaps)
 
     fig.update_layout(title="Shot Conversion Heatmap")
-    fig.show()
+    return fig
 
 
 def plot_shot_details(shot_data):
