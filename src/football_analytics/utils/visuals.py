@@ -269,6 +269,173 @@ def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
     fig.show()
 
 
+def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=5,
+                                 zero_transparent=True, colorscale='YlOrRd',
+                                 shrink=True, prior_shots=5.0, show_ci=True, ci_level=0.95):
+    """
+    Plot a heatmap showing the percentage of shots converted to goals per bin.
+
+    Parameters
+    ----------
+    shots : DataFrame or list of dicts
+        Shot records containing x/y coordinates (either `x1`/`y1` or `x`/`y`).
+    bins : tuple(int, int)
+        Number of bins in x and y directions.
+    goal_col : str or None
+        Column indicating goals. If None, function will try to auto-detect common columns
+        like `is_goal` or `shot_outcome` (matching 'goal' case-insensitive).
+    min_shots : int
+        Minimum number of shots in a bin required to display a conversion value.
+        Bins with fewer shots will be filtered out (shown as transparent). Default is 5.
+    zero_transparent : bool
+        If True, bins with no shots (or below `min_shots`) will be transparent.
+    colorscale : str or list
+        Plotly colorscale for the conversion heatmap.
+    """
+    if isinstance(shots, list):
+        shots = pd.DataFrame(shots)
+    df = shots.copy()
+
+    if df.empty:
+        raise ValueError("No shot data provided")
+
+    # Determine coordinates
+    if {"x1", "y1"}.issubset(df.columns):
+        xs, ys = df["x1"].to_numpy(), df["y1"].to_numpy()
+    elif {"x", "y"}.issubset(df.columns):
+        xs, ys = df["x"].to_numpy(), df["y"].to_numpy()
+    else:
+        raise ValueError("Input must contain (x, y) or (x1, y1) columns.")
+
+    # Determine goal mask
+    if goal_col and goal_col in df.columns:
+        goals = df[goal_col]
+    elif "is_goal" in df.columns:
+        goals = df["is_goal"]
+    elif "outcome" in df.columns:
+        goals = df["outcome"].astype(str).str.lower().str.contains("goal")
+    elif "result" in df.columns:
+        goals = df["result"].astype(str).str.lower().str.contains("goal")
+    else:
+        raise ValueError("Could not detect goal column; pass `goal_col` explicitly.")
+
+    goals_mask = goals.astype(bool).to_numpy().astype(float)
+
+    # Define bin edges matching pitch coordinates (0-120 x, 0-80 y)
+    x_edges = np.linspace(0, 120, bins[0] + 1)
+    y_edges = np.linspace(0, 80, bins[1] + 1)
+
+    shots_count, x_edges_out, y_edges_out = np.histogram2d(xs, ys, bins=[x_edges, y_edges])
+    goals_count, _, _ = np.histogram2d(xs, ys, bins=[x_edges, y_edges], weights=goals_mask)
+
+    # Observed conversion rate (goals / shots)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        obs_conv = np.where(shots_count > 0, goals_count / shots_count, np.nan)
+
+    # Shrinkage (empirical Bayes / pseudocounts) to avoid extreme rates in tiny bins
+    total_shots = shots_count.sum()
+    total_goals = goals_count.sum()
+    p0 = (total_goals / total_shots) if total_shots > 0 else 0.0
+    if shrink:
+        conv = (goals_count + prior_shots * p0) / (shots_count + prior_shots)
+    else:
+        conv = obs_conv
+
+    # Mask bins with too few shots
+    if min_shots > 1:
+        conv = np.where(shots_count >= min_shots, conv, np.nan)
+
+    # Prepare display: percentage 0-100
+    conv_percent = conv * 100.0
+
+    # Ensure bins with zero shots are always transparent
+    conv_percent = np.where(shots_count == 0, np.nan, conv_percent)
+
+    # Optionally keep other masked bins transparent
+    if zero_transparent:
+        conv_percent = np.where(np.isnan(conv_percent), np.nan, conv_percent)
+
+    z = conv_percent.T
+
+    # Compute Wilson CI for observed conversion (for hover) if requested
+    if show_ci:
+        try:
+            from scipy.stats import norm
+            zval = float(norm.ppf(1 - (1 - ci_level) / 2))
+        except Exception:
+            # Fallback z-values for common levels
+            if abs(ci_level - 0.95) < 1e-6:
+                zval = 1.96
+            elif abs(ci_level - 0.90) < 1e-6:
+                zval = 1.645
+            else:
+                zval = 1.96
+        phat = np.where(shots_count > 0, goals_count / shots_count, 0.0)
+        n = shots_count
+        with np.errstate(divide='ignore', invalid='ignore'):
+            den = 1 + (zval ** 2) / n
+            center = phat + (zval ** 2) / (2 * n)
+            adj = zval * np.sqrt((phat * (1 - phat) + (zval ** 2) / (4 * n)) / n)
+            wilson_low = np.where(n > 0, (center - adj) / den, np.nan)
+            wilson_high = np.where(n > 0, (center + adj) / den, np.nan)
+    else:
+        wilson_low = wilson_high = None
+
+    x_centers = (x_edges_out[:-1] + x_edges_out[1:]) / 2
+    y_centers = (y_edges_out[:-1] + y_edges_out[1:]) / 2
+
+    fig = create_pitch()
+
+    # Build per-cell hover text (including shrunk conversion and CI if requested)
+    XX, YY = np.meshgrid(x_centers, y_centers)
+    hover_texts = np.empty_like(z, dtype=object)
+    for i in range(hover_texts.shape[0]):
+        for j in range(hover_texts.shape[1]):
+            shots_n = int(shots_count.T[i, j])
+            goals_n = int(goals_count.T[i, j])
+            pct = z[i, j]
+            # indicate filtered bins explicitly when shots < min_shots
+            if shots_n < int(min_shots):
+                pct_text = f"<{int(min_shots)} shots (filtered)"
+                if show_ci:
+                    ci_text = "N/A"
+                hover_line = f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}"
+                if show_ci and wilson_low is not None:
+                    hover_line += f"<br>{int(ci_level*100)}% CI: {ci_text}"
+                hover_texts[i, j] = hover_line
+                continue
+
+            pct_text = "N/A" if np.isnan(pct) else f"{pct:.1f}%"
+            if show_ci and wilson_low is not None:
+                low = wilson_low.T[i, j] * 100.0
+                high = wilson_high.T[i, j] * 100.0
+                ci_text = "N/A" if np.isnan(low) else f"{low:.1f}%–{high:.1f}%"
+                hover_texts[i, j] = f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}<br>{int(ci_level*100)}% CI: {ci_text}"
+            else:
+                hover_texts[i, j] = f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}"
+
+    fig.add_trace(go.Heatmap(
+        x=x_centers,
+        y=y_centers,
+        z=z,
+        text=hover_texts,
+        hoverinfo='text',
+        colorscale=colorscale,
+        reversescale=False,
+        opacity=0.85,
+        zsmooth='best',
+        colorbar=dict(title='Conversion (%)', ticksuffix='%')
+    ))
+
+    # Ensure heatmap traces render on top
+    heatmaps = [t for t in fig.data if isinstance(t, go.Heatmap)]
+    others = [t for t in fig.data if not isinstance(t, go.Heatmap)]
+    fig.data = tuple(others + heatmaps)
+
+    fig.update_layout(title="Shot Conversion Heatmap")
+    fig.show()
+
+
 def plot_shot_details(shot_data):
     """
     Plots player positions at the moment of a shot and highlights the shooter.
