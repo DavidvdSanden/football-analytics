@@ -140,7 +140,7 @@ def plot_shot_overview(shots):
     fig.show()
 
 
-def plot_shot_heatmap(shots, bins=(30, 20), weights_col=None, normalize=False,
+def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
                       scale='sqrt', zero_transparent=True, colorscale='YlOrRd'):
     """
     Plot a 2D heatmap of shot locations on the pitch.
@@ -213,15 +213,51 @@ def plot_shot_heatmap(shots, bins=(30, 20), weights_col=None, normalize=False,
 
     fig = create_pitch()
 
+    # Prepare colorbar ticks that show original counts while using scaled values for color mapping
+    H_orig = H.copy()
+    # z is already the transposed scaled display array
+    z_for_plot = z
+
+    # Build tick labels mapping: choose a handful of original-count tick positions
+    H_max = float(H_orig.max())
+    H_pos = H_orig[H_orig > 0]
+    H_min_pos = float(H_pos.min()) if H_pos.size > 0 else 0.0
+    n_ticks = 5
+    original_ticks = np.linspace(H_min_pos, H_max, n_ticks)
+
+    if scale == 'log':
+        tickvals = np.log1p(original_ticks)
+    elif scale == 'sqrt':
+        tickvals = np.sqrt(original_ticks)
+    else:
+        tickvals = original_ticks
+
+    # Format tick text nicely (integers if counts, else floats)
+    def fmt(v):
+        if float(v).is_integer():
+            return str(int(v))
+        return f"{v:.2f}"
+
+    ticktext = [fmt(v) for v in original_ticks]
+
+    # Build per-cell hover text (string) and use hoverinfo='text' for compatibility
+    XX, YY = np.meshgrid(x_centers, y_centers)
+    hover_texts = np.empty_like(H_orig.T, dtype=object)
+    for i in range(hover_texts.shape[0]):
+        for j in range(hover_texts.shape[1]):
+            hover_texts[i, j] = f"Count: {fmt(H_orig.T[i, j])}<br>x: {XX[i, j]:.1f}<br>y: {YY[i, j]:.1f}"
+
     fig.add_trace(go.Heatmap(
         x=x_centers,
         y=y_centers,
-        z=z,
-        colorscale='YlOrRd',
+        z=z_for_plot,
+        text=hover_texts,
+        hoverinfo='text',
+        colorscale=colorscale,
         reversescale=False,
         opacity=0.85,
         zsmooth='best',
-        colorbar=dict(title=(weights_col or 'Count'))
+        colorbar=dict(title=(weights_col or 'Count'), tickmode='array', tickvals=tickvals, ticktext=ticktext),
     ))
 
     # Ensure heatmap traces render on top of pitch shapes/traces by reordering traces
