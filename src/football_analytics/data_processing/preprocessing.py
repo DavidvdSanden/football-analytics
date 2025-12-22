@@ -1,3 +1,4 @@
+import json
 import numpy as np
 import football_analytics.utils.helper as helper
 
@@ -106,6 +107,7 @@ def extract_shot_features(event, match_id=None):
         under_pressure = bool(_up)
 
     # Combine all extracted features into a single dict
+    full_json = event.to_json() if hasattr(event, "to_json") else json.dumps(event)
     shot_data_row = {
         'statsbomb_event_id': event['id'],
         'match_id': match_id,
@@ -126,7 +128,7 @@ def extract_shot_features(event, match_id=None):
         'shot_type': shot_type,
         'body_part': body_part,
         'outcome': outcome,
-        'full_json': event.to_json(),
+        'full_json': full_json,
         'statsbomb_xg': shot.get('statsbomb_xg', None),
         'attacking_team_id': attacking_team.get('id'),
         'shot_taker_id': shot_taker.get('id'),
