@@ -66,7 +66,7 @@ def extract_shot_features(event, match_id=None):
     # Outcome
     outcome = shot.get('outcome', {}).get('name')
 
-    # Basis features
+    # Basic features
     distance_to_goal = helper.euclidean(shot_loc, GOAL_CENTER)
     angle_to_goal = helper.shot_angle(shot_loc, LEFT_POST, RIGHT_POST)
     min_defender_distance = min([helper.euclidean(shot_loc, d) for d in defenders]) if defenders else None
@@ -91,11 +91,12 @@ def extract_shot_features(event, match_id=None):
             min_defender_distance = min_penalty_def_dist
         if avg_defender_distance is None:
             avg_defender_distance = min_penalty_def_dist
+        keeper_is_in_shot_triangle = True
 
-    # Dynamische ratio features
+    # Dynamic ratio features
     shot_to_min_def_ratio = distance_to_goal / (min_defender_distance + 0.01) if min_defender_distance is not None else None
 
-    # Combineer alles in 1 rij
+    # Combine all extracted features into a single dict
     shot_data_row = {
         'statsbomb_event_id': event['id'],
         'match_id': match_id,
@@ -121,6 +122,7 @@ def extract_shot_features(event, match_id=None):
         'attacking_team_id': attacking_team.get('id'),
         'shot_taker_id': shot_taker.get('id'),
         'keeper_is_in_shot_triangle': keeper_is_in_shot_triangle,
+        'under_pressure': bool(event.get('under_pressure', False)),
     }
 
     return shot_data_row
