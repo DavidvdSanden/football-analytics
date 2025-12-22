@@ -96,6 +96,15 @@ def extract_shot_features(event, match_id=None):
     # Dynamic ratio features
     shot_to_min_def_ratio = distance_to_goal / (min_defender_distance + 0.01) if min_defender_distance is not None else None
 
+    # Parse `under_pressure` carefully (float('nan') should be treated as False)
+    _up = event.get('under_pressure', False)
+    if isinstance(_up, float) and np.isnan(_up):
+        under_pressure = False
+    elif isinstance(_up, str):
+        under_pressure = _up.strip().lower() in ('true', '1', 'yes', 'y')
+    else:
+        under_pressure = bool(_up)
+
     # Combine all extracted features into a single dict
     shot_data_row = {
         'statsbomb_event_id': event['id'],
@@ -122,7 +131,7 @@ def extract_shot_features(event, match_id=None):
         'attacking_team_id': attacking_team.get('id'),
         'shot_taker_id': shot_taker.get('id'),
         'keeper_is_in_shot_triangle': keeper_is_in_shot_triangle,
-        'under_pressure': bool(event.get('under_pressure', False)),
+        'under_pressure': under_pressure,
     }
 
     return shot_data_row
