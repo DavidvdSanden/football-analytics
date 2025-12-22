@@ -630,6 +630,14 @@ def plot_shot_details(shot_data):
     # Colors
     colors = df["teammate"].map({True: "blue", False: "red"})
 
+    # Identify goalkeeper(s) and give them a distinct shape/linewidth to stand out
+    df["is_opposition_goalkeeper"] = df["position_name"].astype(str).str.lower().str.contains("goal") & (~df["teammate"])
+    # Marker properties per-point (Plotly accepts lists for per-point marker attributes)
+    marker_colors = np.where(df["is_opposition_goalkeeper"], "red", colors).tolist()
+    marker_symbols = np.where(df["is_opposition_goalkeeper"], "diamond", "circle").tolist()
+    marker_sizes = np.where(df["is_opposition_goalkeeper"], 14, 12).tolist()
+    marker_line_widths = np.where(df["is_opposition_goalkeeper"], 3, 1).tolist()
+
     fig = create_pitch()
 
     # -----------------------------
@@ -638,7 +646,8 @@ def plot_shot_details(shot_data):
     fig.add_trace(go.Scatter(
         x=df["x"], y=df["y"],
         mode="markers+text",
-        marker=dict(size=12, color=colors, line=dict(color="black", width=1)),
+        marker=dict(size=marker_sizes, color=marker_colors, symbol=marker_symbols,
+                    line=dict(color="black", width=marker_line_widths)),
         # text=df["player_name"],
         textposition="top center",
         hovertext=df["hover"],
