@@ -22,7 +22,7 @@ Develop skills in:
 
 #### 🤖 Modeling
 - [x] Baseline logistic regression
-- [ ] Neural network xG model
+- [x] Neural network xG model
 
 #### 📈 Analysis
 - [ ] Expected Threat (xT)
@@ -39,17 +39,14 @@ Develop skills in:
 
 ## 🧩 Next Milestones
 
-**Milestone 1 – Baseline xG**
-- Train calibrated xG model
-- Evaluation
-
-**Milestone 2 – Visualization**
+**Milestone 1 – Visualization**
 - Shot maps & xG distributions
 - Front-end prototype
 
-**Milestone 3 – Player Value**
+**Milestone 2 – Player Value**
 - xT model
 - Player contribution metrics
+- Transfermarket scraping
 
 <br>
 
