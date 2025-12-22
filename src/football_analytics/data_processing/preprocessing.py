@@ -45,6 +45,9 @@ def extract_shot_features(event, match_id=None):
         frac_goal_uncovered, blocked_ang, total_ang = helper.blocked_goal_fraction(
             shot_loc, LEFT_POST, RIGHT_POST, defenders, keeper=keeper_loc
         )
+        keeper_is_in_shot_triangle = helper.keeper_in_shot_triangle(
+            shot_loc, LEFT_POST, RIGHT_POST, shot['freeze_frame']
+        )
     else:
         defenders = None
         teammates = None
@@ -52,6 +55,7 @@ def extract_shot_features(event, match_id=None):
         num_def_in_shot_triangle = None
         num_teammates_in_box = None
         frac_goal_uncovered = None
+        keeper_is_in_shot_triangle = None
 
 
 
@@ -116,6 +120,7 @@ def extract_shot_features(event, match_id=None):
         'statsbomb_xg': shot.get('statsbomb_xg', None),
         'attacking_team_id': attacking_team.get('id'),
         'shot_taker_id': shot_taker.get('id'),
+        'keeper_is_in_shot_triangle': keeper_is_in_shot_triangle,
     }
 
     return shot_data_row
