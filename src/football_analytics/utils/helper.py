@@ -5,6 +5,7 @@ import logging
 import time
 from dotenv import load_dotenv
 from supabase import create_client, Client
+import json, ast, pandas as pd
 
 
 # -----------------------------
@@ -284,3 +285,56 @@ def fetch_all_rows_in_batches(
             break
 
     return all_rows
+
+
+def parse_json_field(s):
+    if pd.isna(s):
+        return None
+    if isinstance(s, (dict, list)):
+        return s
+    if isinstance(s, bytes):
+        s = s.decode()
+    try:
+        out = json.loads(s)
+        if isinstance(out, str):
+            out = json.loads(out)
+        return out
+    except (json.JSONDecodeError, TypeError):
+        return ast.literal_eval(s)
+
+
+def keeper_in_shot_triangle(shot_loc, left_post, right_post, freeze_frame):
+    """
+    Return True if the opposing goalkeeper (if present) is located inside the
+    triangle defined by the shot location and the two goal posts.
+
+    Parameters
+    ----------
+    shot_loc : (x,y)
+    left_post, right_post : (x,y)
+    freeze_frame : list of player dicts (each with 'teammate', 'position', 'location')
+
+    Returns
+    -------
+    bool
+    """
+    if not freeze_frame:
+        return False
+
+    # find opponent goalkeeper
+    keeper_loc = None
+    for p in freeze_frame:
+        if p.get('teammate'):
+            continue
+        pos_name = p.get('position', {}).get('name', '') or ''
+        if pos_name.lower() == 'goalkeeper':
+            keeper_loc = p.get('location')
+            break
+
+    if not keeper_loc:
+        return False
+
+    try:
+        return bool(point_in_triangle(keeper_loc, shot_loc, left_post, right_post))
+    except Exception:
+        return False
