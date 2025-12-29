@@ -47,11 +47,15 @@ def display_shot_by_id(
         return
 
     shot_row = _parse_shot_row(data[0])
-    if not shot_row:
-        st.error("Shot row is missing required fields for the shot visual.")
+
+    raw = shot_row.get("full_json")
+    shot_payload = helper.parse_json_field(raw)
+
+    if not isinstance(shot_payload, dict):
+        st.error("full_json is not a valid JSON object.")
         return
 
-    fig = visuals.plot_shot_details(shot_row['full_json'], show=False)
+    fig = visuals.plot_shot_details(shot_payload, show=False)
     st.plotly_chart(fig, use_container_width=True)
 
 

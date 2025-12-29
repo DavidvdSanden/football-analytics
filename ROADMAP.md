@@ -39,6 +39,9 @@ Develop skills in:
 
 ## 🧩 Next Milestones
 
+**Milestone 0 – Data Collection**
+- Add match ID to shot table
+
 **Milestone 1 – Visualization**
 - Shot maps & xG distributions
 - Front-end prototype
