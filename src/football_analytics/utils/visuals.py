@@ -593,7 +593,7 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
     return fig
 
 
-def plot_shot_details(shot_data):
+def plot_shot_details(shot_data, show=True):
     """
     Plots player positions at the moment of a shot and highlights the shooter.
 
@@ -609,7 +609,11 @@ def plot_shot_details(shot_data):
     # ----------------------------------------------------------
     # Convert freeze_frame → DataFrame
     # ----------------------------------------------------------
-    shot = shot_data.get('shot', [])
+    shot = shot_data.get('shot', {})
+    if isinstance(shot, list):
+        shot = shot[0] if shot else {}
+    if not isinstance(shot, dict):
+        shot = {}
     ff = shot.get("freeze_frame", [])
     df = pd.DataFrame(ff)
 
@@ -678,4 +682,6 @@ def plot_shot_details(shot_data):
         title="Shot Detail with Freeze Frame"
     )
 
-    fig.show()
+    if show:
+        fig.show()
+    return fig
