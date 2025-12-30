@@ -108,7 +108,7 @@ def create_pitch():
 
     return fig
 
-def plot_shot_overview(shots):
+def plot_shot_overview(shots, xg_column="xg", show=True):
     """
     Overview of all shots on the pitch.
     Accepts DataFrame or list of dicts.
@@ -125,7 +125,7 @@ def plot_shot_overview(shots):
     else:
         raise ValueError("Input must contain (x, y) or (x1, y1) columns.")
 
-    colors = df.get("xG", pd.Series(np.zeros(len(df))))
+    colors = df.get(xg_column, pd.Series(np.zeros(len(df))))
     hover_texts = df.apply(lambda row: "<br>".join([f"{col}: {row[col]}" for col in df.columns]), axis=1)
 
     fig = create_pitch()
@@ -137,7 +137,9 @@ def plot_shot_overview(shots):
     ))
 
     fig.update_layout(title="Overview of Shots")
-    fig.show()
+    if show:
+        fig.show()
+    return fig
 
 
 def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
