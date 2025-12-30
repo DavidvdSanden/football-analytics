@@ -45,6 +45,7 @@ Develop skills in:
 **Milestone 1 – Visualization**
 - Shot maps & xG distributions
 - Front-end prototype
+- xG progression visual
 
 **Milestone 2 – Player Value**
 - xT model
@@ -58,6 +59,14 @@ Develop skills in:
 - League-specific priors
 - Position-aware models
 - Injury risk estimation
+- Items that add value for players (xV):
+   - Shoot (xG)
+   - Pass / dribble to more valuable situation
+   - Win 50/50
+   - Regain possession (prevent xG from opponent + create own xG) -> can be on ground and via air
+   - Prevent possession of opponent in more valuable xT
+   - Create valuable option for other player to move possession to
+
 
 <br>
 
