@@ -34,7 +34,7 @@ def load_competitions():
     response = (
         supabase
         .table("competitions")
-        .select("competition_id, competition_name, season_name")
+        .select("competition_id, competition_name, season_name, season_id")
         .execute()
     )
     df = pd.DataFrame(response.data)
@@ -56,7 +56,7 @@ def load_matches():
     response = (
         supabase
         .table("matches")
-        .select("match_id, home_team_id, away_team_id, home_score, away_score, match_date, competition_id")
+        .select("match_id, home_team_id, away_team_id, home_score, away_score, match_date, competition_id, season_id")
         .execute()
     )
     df = pd.DataFrame(response.data)
@@ -113,12 +113,16 @@ matches = load_matches()
 # -------------------
 ### Match Selection ###
 # -------------------
-
+st.subheader("Match Selection")
 # --- Competition ---
 competition = st.selectbox(
     "Competition",
     sorted(competitions["competition_name"].dropna().unique())
 )
+selected_competition_id = competitions.loc[
+    competitions["competition_name"] == competition,
+    "competition_id"
+].unique()[0]
 
 # --- Season ---
 seasons = sorted(
@@ -128,6 +132,11 @@ seasons = sorted(
     ].dropna().unique()
 )
 season = st.selectbox("Season", seasons)
+selected_season_id = competitions.loc[
+    (competitions["competition_name"] == competition) &
+    (competitions["season_name"] == season),
+    "season_id"
+].unique()[0]
 
 
 # --- Match ---
@@ -138,7 +147,8 @@ comp_season_ids = competitions.loc[
 ].unique()
 
 matches_filtered = matches.loc[
-    matches["competition_id"].isin(comp_season_ids)
+    (matches["competition_id"] == selected_competition_id) &
+    (matches["season_id"] == selected_season_id)
 ].copy()
 
 if matches_filtered.empty:
@@ -184,11 +194,6 @@ match_id = matches_with_names.loc[
     "match_id"
 ].iloc[0]
 
-# match_id = st.selectbox(
-#     "Select match ID",
-#     matches_sorted
-# )
-
 selected_match_df = matches[matches["match_id"] == match_id]
 
 st.subheader("Match Statistics")
@@ -205,8 +210,17 @@ match_header(
 
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
 
+st.markdown("#### xG Progression")
+st.write("TO DO")
+
+
 st.markdown("#### Shot Overview")
 fig = visuals.plot_shot_overview(shot_data[["statsbomb_event_id", "minute", "second", "x1", "y1", "statsbomb_xg", "outcome", "shot_taker_id", "attacking_team_id"]].to_dict(orient="records"), 
                                  show=False,
-                                 xg_column="statsbomb_xg")
+                                 xg_column="statsbomb_xg",
+                                 away_on_left=True,
+                                 home_team_id=selected_match_df['home_team_id'].values[0],
+                                 away_team_id=selected_match_df['away_team_id'].values[0],
+                                 pitch_theme="transparent",
+                                 show_axis_labels=False)
 st.plotly_chart(fig, use_container_width=True)
