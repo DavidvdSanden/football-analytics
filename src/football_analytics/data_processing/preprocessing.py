@@ -1,6 +1,81 @@
 import json
+from datetime import datetime, date, time
 import numpy as np
 import football_analytics.utils.helper as helper
+
+
+def _parse_int(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, bool):
+        return int(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_date(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            try:
+                return datetime.fromisoformat(value).date().isoformat()
+            except ValueError:
+                return value
+    return value
+
+
+def _parse_time(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.time().isoformat()
+    if isinstance(value, time):
+        return value.isoformat()
+    if isinstance(value, str):
+        for fmt in ("%H:%M:%S.%f", "%H:%M:%S"):
+            try:
+                return datetime.strptime(value, fmt).time().isoformat()
+            except ValueError:
+                continue
+        try:
+            return datetime.fromisoformat(value).time().isoformat()
+        except ValueError:
+            return value
+    return value
+
+
+def _parse_timestamp(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return datetime.combine(value, time.min).isoformat()
+    if isinstance(value, str):
+        cleaned = value.rstrip()
+        if cleaned.endswith("Z"):
+            cleaned = cleaned[:-1]
+        try:
+            return datetime.fromisoformat(cleaned).isoformat()
+        except ValueError:
+            for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    return datetime.strptime(cleaned, fmt).isoformat()
+                except ValueError:
+                    continue
+            return value
+    return value
 
 
 def extract_shot_features(event, match_id=None):
@@ -196,4 +271,40 @@ def extract_player_row(event):
         'team_id': team.get('id'),
         'team_name': team.get('name'),
         'jersey_number': jersey_number,
+    }
+
+
+def extract_match_row(match):
+    """
+    Normalize a StatsBomb match entry into a flat dict for database ingestion.
+    """
+    if not match:
+        return None
+
+    competition = match.get('competition') or {}
+    season = match.get('season') or {}
+    home_team = match.get('home_team') or {}
+    away_team = match.get('away_team') or {}
+    competition_stage = match.get('competition_stage') or {}
+    stadium = match.get('stadium') or {}
+    referee = match.get('referee') or {}
+
+    return {
+        'match_id': _parse_int(match.get('match_id')),
+        'match_date': _parse_date(match.get('match_date')),
+        'kick_off': _parse_time(match.get('kick_off')),
+        'competition_id': _parse_int(competition.get('competition_id')),
+        'season_id': _parse_int(season.get('season_id')),
+        'home_team_id': _parse_int(home_team.get('home_team_id')),
+        'away_team_id': _parse_int(away_team.get('away_team_id')),
+        'home_score': _parse_int(match.get('home_score')),
+        'away_score': _parse_int(match.get('away_score')),
+        'match_status': match.get('match_status'),
+        'match_status_360': match.get('match_status_360'),
+        'last_updated': _parse_timestamp(match.get('last_updated')),
+        'last_updated_360': _parse_timestamp(match.get('last_updated_360')),
+        'match_week': _parse_int(match.get('match_week')),
+        'competition_stage_id': _parse_int(competition_stage.get('id')),
+        'stadium_id': _parse_int(stadium.get('id')),
+        'referee_id': _parse_int(referee.get('id')),
     }
