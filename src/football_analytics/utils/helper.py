@@ -12,6 +12,7 @@ import json, ast, pandas as pd
 # HELPER FUNCTIONS
 # -----------------------------
 
+
 def euclidean(a, b):
     """Calculate Euclidean distance between points a and b."""
     return math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2)
@@ -34,10 +35,11 @@ def shot_angle(shot, left_post, right_post):
     c = euclidean(left_post, right_post)
 
     try:
-        angle = math.acos((a ** 2 + b ** 2 - c ** 2) / (2 * a * b))
+        angle = math.acos((a**2 + b**2 - c**2) / (2 * a * b))
     except:
         angle = 0.0  # If calculation fails, return 0
     return angle
+
 
 def point_in_triangle(p, a, b, c):
     """
@@ -50,14 +52,14 @@ def point_in_triangle(p, a, b, c):
     v2 = [p[0] - a[0], p[1] - a[1]]
 
     # Dot products
-    dot00 = v0[0]*v0[0] + v0[1]*v0[1]
-    dot01 = v0[0]*v1[0] + v0[1]*v1[1]
-    dot02 = v0[0]*v2[0] + v0[1]*v2[1]
-    dot11 = v1[0]*v1[0] + v1[1]*v1[1]
-    dot12 = v1[0]*v2[0] + v1[1]*v2[1]
+    dot00 = v0[0] * v0[0] + v0[1] * v0[1]
+    dot01 = v0[0] * v1[0] + v0[1] * v1[1]
+    dot02 = v0[0] * v2[0] + v0[1] * v2[1]
+    dot11 = v1[0] * v1[0] + v1[1] * v1[1]
+    dot12 = v1[0] * v2[0] + v1[1] * v2[1]
 
     # Barycentric coordinates
-    denom = (dot00 * dot11 - dot01 * dot01)
+    denom = dot00 * dot11 - dot01 * dot01
     if denom == 0:
         return False  # Degenerate triangle
 
@@ -92,39 +94,49 @@ def count_opponents_in_shot_triangle(shot_loc, left_post, right_post, freeze_fra
 
     return count
 
+
 def _angle(a, b):
     """angle from point a -> point b in radians (range -pi..pi)"""
-    return math.atan2(b[1]-a[1], b[0]-a[0])
+    return math.atan2(b[1] - a[1], b[0] - a[0])
+
 
 def _normalize_ang(a):
     """Normalize angle to [-pi, pi)"""
-    a = (a + math.pi) % (2*math.pi) - math.pi
+    a = (a + math.pi) % (2 * math.pi) - math.pi
     return a
+
 
 def _angle_diff(a, b):
     """Smallest signed difference b-a in radians"""
     d = _normalize_ang(b - a)
     return d
 
+
 def _intervals_union(intervals):
     """Union list of intervals on circle-like line but we assume no wrap-around here (angles in increasing order).
-       Intervals are (start, end) with start <= end. Returns merged list.
+    Intervals are (start, end) with start <= end. Returns merged list.
     """
     if not intervals:
         return []
     intervals = sorted(intervals, key=lambda x: x[0])
     merged = [list(intervals[0])]
-    for s,e in intervals[1:]:
+    for s, e in intervals[1:]:
         if s <= merged[-1][1] + 1e-9:
             merged[-1][1] = max(merged[-1][1], e)
         else:
-            merged.append([s,e])
+            merged.append([s, e])
     return merged
 
-def blocked_goal_fraction(shot_loc, left_post, right_post, defenders,
-                           keeper=None,
-                           player_radius=0.25,
-                           keeper_radius=0.75):
+
+def blocked_goal_fraction(
+    shot_loc,
+    left_post,
+    right_post,
+    defenders,
+    keeper=None,
+    player_radius=0.25,
+    keeper_radius=0.75,
+):
     """
     Compute fraction of goal angular span blocked by opponents (and optionally keeper).
     Inputs:
@@ -149,8 +161,10 @@ def blocked_goal_fraction(shot_loc, left_post, right_post, defenders,
     # simpler: compute both and take absolute difference
     # We'll map all angles to an interval centered on the goal mid-angle to avoid wrapping issues.
     goal_mid = _normalize_ang((ang_L + ang_R) / 2.0)
+
     def _rel(a):
         return _normalize_ang(a - goal_mid)
+
     rel_L = _rel(ang_L)
     rel_R = _rel(ang_R)
     # ensure rel_L < rel_R
@@ -187,14 +201,14 @@ def blocked_goal_fraction(shot_loc, left_post, right_post, defenders,
     def extract_xy(obj):
         if isinstance(obj, (list, tuple, np.ndarray)) and len(obj) >= 2:
             return (float(obj[0]), float(obj[1]))
-        if isinstance(obj, dict) and 'location' in obj:
-            loc = obj['location']
+        if isinstance(obj, dict) and "location" in obj:
+            loc = obj["location"]
             return (float(loc[0]), float(loc[1]))
         raise ValueError("defender format not recognized")
 
     for d in defenders:
         px, py = extract_xy(d)
-        start, end = occlusion_interval((px,py), player_radius)
+        start, end = occlusion_interval((px, py), player_radius)
         # clip interval to goal span
         # if interval outside, skip; else append clipped piece
         # interval coordinates are relative to goal_mid; goal span is [rel_L, rel_R]
@@ -209,13 +223,13 @@ def blocked_goal_fraction(shot_loc, left_post, right_post, defenders,
     # keeper
     if keeper is not None:
         kx, ky = extract_xy(keeper)
-        start, end = occlusion_interval((kx,ky), keeper_radius)
+        start, end = occlusion_interval((kx, ky), keeper_radius)
         if not (end < rel_L or start > rel_R):
             intervals.append((max(start, rel_L), min(end, rel_R)))
 
     # unify intervals
     merged = _intervals_union(intervals)
-    blocked_angle = sum(e - s for s,e in merged)
+    blocked_angle = sum(e - s for s, e in merged)
     uncovered_fraction = max(0.0, 1.0 - blocked_angle / goal_span)
     return uncovered_fraction, blocked_angle, goal_span
 
@@ -233,7 +247,7 @@ def fetch_all_rows_in_batches(
     key_column: str,
     columns: str = "*",
     batch_size: int = 5000,
-    max_batches: int | None = None
+    max_batches: int | None = None,
 ):
     """
     Fetch all rows from a Supabase table in batches to avoid timeouts.
@@ -257,7 +271,12 @@ def fetch_all_rows_in_batches(
     while True:
         try:
 
-            query = supabase.table(table_name).select(columns).order(key_column, desc=False).limit(batch_size)
+            query = (
+                supabase.table(table_name)
+                .select(columns)
+                .order(key_column, desc=False)
+                .limit(batch_size)
+            )
             if last_key is not None:
                 query = query.gt(key_column, last_key)
 
@@ -324,11 +343,11 @@ def keeper_in_shot_triangle(shot_loc, left_post, right_post, freeze_frame):
     # find opponent goalkeeper
     keeper_loc = None
     for p in freeze_frame:
-        if p.get('teammate'):
+        if p.get("teammate"):
             continue
-        pos_name = p.get('position', {}).get('name', '') or ''
-        if pos_name.lower() == 'goalkeeper':
-            keeper_loc = p.get('location')
+        pos_name = p.get("position", {}).get("name", "") or ""
+        if pos_name.lower() == "goalkeeper":
+            keeper_loc = p.get("location")
             break
 
     if not keeper_loc:

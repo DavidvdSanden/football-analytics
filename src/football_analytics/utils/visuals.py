@@ -2,6 +2,7 @@ import plotly.graph_objects as go
 import numpy as np
 import pandas as pd
 
+
 def _get_pitch_theme_colors(pitch_theme):
     if pitch_theme == "dark":
         return "#1E1E1E", "#E6E6E6", False
@@ -10,6 +11,7 @@ def _get_pitch_theme_colors(pitch_theme):
     if pitch_theme == "transparent":
         return "rgba(0,0,0,0)", "white", True
     raise ValueError("pitch_theme must be one of: 'green', 'dark', 'transparent'")
+
 
 def create_pitch(pitch_theme="green", show_axis_labels=True):
     """
@@ -39,66 +41,139 @@ def create_pitch(pitch_theme="green", show_axis_labels=True):
     pitch_color, line_color, is_transparent = _get_pitch_theme_colors(pitch_theme)
 
     # ----------------------------- Pitch background -----------------------------
-    fig.add_shape(type="rect",
-                  x0=0, y0=0, x1=pitch_length, y1=pitch_width,
-                  line=dict(color=line_color), fillcolor=pitch_color, layer="below")
+    fig.add_shape(
+        type="rect",
+        x0=0,
+        y0=0,
+        x1=pitch_length,
+        y1=pitch_width,
+        line=dict(color=line_color),
+        fillcolor=pitch_color,
+        layer="below",
+    )
 
     # Pitch boundary & center line
-    fig.add_shape(type="rect", x0=0, y0=0, x1=pitch_length, y1=pitch_width,
-                  line=dict(color=line_color, width=2), layer="below")
-    fig.add_shape(type="line", x0=pitch_length / 2, y0=0,
-                  x1=pitch_length / 2, y1=pitch_width,
-                  line=dict(color=line_color, width=2), layer="below")
+    fig.add_shape(
+        type="rect",
+        x0=0,
+        y0=0,
+        x1=pitch_length,
+        y1=pitch_width,
+        line=dict(color=line_color, width=2),
+        layer="below",
+    )
+    fig.add_shape(
+        type="line",
+        x0=pitch_length / 2,
+        y0=0,
+        x1=pitch_length / 2,
+        y1=pitch_width,
+        line=dict(color=line_color, width=2),
+        layer="below",
+    )
 
     # Center circle & spot
-    fig.add_shape(type="circle",
-                  x0=pitch_length / 2 - 10, y0=center_y - 10,
-                  x1=pitch_length / 2 + 10, y1=center_y + 10,
-                  line=dict(color=line_color, width=2), layer="below")
-    fig.add_shape(type="circle",
-                  x0=pitch_length / 2 - 0.3, y0=center_y - 0.3,
-                  x1=pitch_length / 2 + 0.3, y1=center_y + 0.3,
-                  line=dict(color=line_color, width=2), fillcolor=line_color, layer="below")
+    fig.add_shape(
+        type="circle",
+        x0=pitch_length / 2 - 10,
+        y0=center_y - 10,
+        x1=pitch_length / 2 + 10,
+        y1=center_y + 10,
+        line=dict(color=line_color, width=2),
+        layer="below",
+    )
+    fig.add_shape(
+        type="circle",
+        x0=pitch_length / 2 - 0.3,
+        y0=center_y - 0.3,
+        x1=pitch_length / 2 + 0.3,
+        y1=center_y + 0.3,
+        line=dict(color=line_color, width=2),
+        fillcolor=line_color,
+        layer="below",
+    )
 
     # Penalty boxes
-    fig.add_shape(type="rect",
-                  x0=0, y0=center_y - pen_box_width / 2,
-                  x1=pen_box_depth, y1=center_y + pen_box_width / 2,
-                  line=dict(color=line_color, width=2), layer="below")
-    fig.add_shape(type="rect",
-                  x0=pitch_length - pen_box_depth, y0=center_y - pen_box_width / 2,
-                  x1=pitch_length, y1=center_y + pen_box_width / 2,
-                  line=dict(color=line_color, width=2), layer="below")
+    fig.add_shape(
+        type="rect",
+        x0=0,
+        y0=center_y - pen_box_width / 2,
+        x1=pen_box_depth,
+        y1=center_y + pen_box_width / 2,
+        line=dict(color=line_color, width=2),
+        layer="below",
+    )
+    fig.add_shape(
+        type="rect",
+        x0=pitch_length - pen_box_depth,
+        y0=center_y - pen_box_width / 2,
+        x1=pitch_length,
+        y1=center_y + pen_box_width / 2,
+        line=dict(color=line_color, width=2),
+        layer="below",
+    )
 
     # Goalkeeper boxes
-    fig.add_shape(type="rect",
-                  x0=0, y0=center_y - gk_box_width / 2,
-                  x1=gk_box_depth, y1=center_y + gk_box_width / 2,
-                  line=dict(color=line_color, width=2), layer="below")
-    fig.add_shape(type="rect",
-                  x0=pitch_length - gk_box_depth, y0=center_y - gk_box_width / 2,
-                  x1=pitch_length, y1=center_y + gk_box_width / 2,
-                  line=dict(color=line_color, width=2), layer="below")
+    fig.add_shape(
+        type="rect",
+        x0=0,
+        y0=center_y - gk_box_width / 2,
+        x1=gk_box_depth,
+        y1=center_y + gk_box_width / 2,
+        line=dict(color=line_color, width=2),
+        layer="below",
+    )
+    fig.add_shape(
+        type="rect",
+        x0=pitch_length - gk_box_depth,
+        y0=center_y - gk_box_width / 2,
+        x1=pitch_length,
+        y1=center_y + gk_box_width / 2,
+        line=dict(color=line_color, width=2),
+        layer="below",
+    )
 
     # Goals
-    fig.add_shape(type="rect",
-                  x0=-goal_depth, y0=center_y - goal_width / 2,
-                  x1=0, y1=center_y + goal_width / 2,
-                  line=dict(color=line_color, width=6), layer="below")
-    fig.add_shape(type="rect",
-                  x0=pitch_length, y0=center_y - goal_width / 2,
-                  x1=pitch_length + goal_depth, y1=center_y + goal_width / 2,
-                  line=dict(color=line_color, width=6), layer="below")
+    fig.add_shape(
+        type="rect",
+        x0=-goal_depth,
+        y0=center_y - goal_width / 2,
+        x1=0,
+        y1=center_y + goal_width / 2,
+        line=dict(color=line_color, width=6),
+        layer="below",
+    )
+    fig.add_shape(
+        type="rect",
+        x0=pitch_length,
+        y0=center_y - goal_width / 2,
+        x1=pitch_length + goal_depth,
+        y1=center_y + goal_width / 2,
+        line=dict(color=line_color, width=6),
+        layer="below",
+    )
 
     # Penalty spots
-    fig.add_shape(type="circle",
-                  x0=penalty_spot - 0.3, y0=center_y - 0.3,
-                  x1=penalty_spot + 0.3, y1=center_y + 0.3,
-                  line=dict(color=line_color, width=2), fillcolor=line_color, layer="below")
-    fig.add_shape(type="circle",
-                  x0=pitch_length - penalty_spot - 0.3, y0=center_y - 0.3,
-                  x1=pitch_length - penalty_spot + 0.3, y1=center_y + 0.3,
-                  line=dict(color=line_color, width=2), fillcolor=line_color, layer="below")
+    fig.add_shape(
+        type="circle",
+        x0=penalty_spot - 0.3,
+        y0=center_y - 0.3,
+        x1=penalty_spot + 0.3,
+        y1=center_y + 0.3,
+        line=dict(color=line_color, width=2),
+        fillcolor=line_color,
+        layer="below",
+    )
+    fig.add_shape(
+        type="circle",
+        x0=pitch_length - penalty_spot - 0.3,
+        y0=center_y - 0.3,
+        x1=pitch_length - penalty_spot + 0.3,
+        y1=center_y + 0.3,
+        line=dict(color=line_color, width=2),
+        fillcolor=line_color,
+        layer="below",
+    )
 
     # Penalty arcs
     d = pen_box_depth - penalty_spot
@@ -110,12 +185,19 @@ def create_pitch(pitch_theme="green", show_axis_labels=True):
     xs_left = (penalty_spot + arc_radius * np.cos(theta_left)).tolist()
     ys_left = (center_y + arc_radius * np.sin(theta_left)).tolist()
     path_left = "M " + " L ".join(f"{x},{y}" for x, y in zip(xs_left, ys_left))
-    fig.add_shape(type="path", path=path_left, line=dict(color=line_color, width=2), layer='below')
+    fig.add_shape(
+        type="path", path=path_left, line=dict(color=line_color, width=2), layer="below"
+    )
 
     xs_right = (pitch_length - penalty_spot + arc_radius * np.cos(theta_right)).tolist()
     ys_right = (center_y + arc_radius * np.sin(theta_right)).tolist()
     path_right = "M " + " L ".join(f"{x},{y}" for x, y in zip(xs_right, ys_right))
-    fig.add_shape(type="path", path=path_right, line=dict(color=line_color, width=2), layer='below')
+    fig.add_shape(
+        type="path",
+        path=path_right,
+        line=dict(color=line_color, width=2),
+        layer="below",
+    )
 
     # Layout
     fig.update_layout(
@@ -134,17 +216,27 @@ def create_pitch(pitch_theme="green", show_axis_labels=True):
             showticklabels=show_axis_labels,
             ticks="outside" if show_axis_labels else "",
         ),
-        width=1100, height=700,
+        width=1100,
+        height=700,
         plot_bgcolor=pitch_color,
         paper_bgcolor="rgba(0,0,0,0)" if is_transparent else pitch_color,
-        showlegend=False
+        showlegend=False,
     )
 
     return fig
 
-def plot_shot_overview(shots, xg_column="xg", show=True, away_on_left=False,
-                       pitch_theme="green", show_axis_labels=True,
-                       home_team_id=None, away_team_id=None, team_id_column="attacking_team_id"):
+
+def plot_shot_overview(
+    shots,
+    xg_column="xg",
+    show=True,
+    away_on_left=False,
+    pitch_theme="green",
+    show_axis_labels=True,
+    home_team_id=None,
+    away_team_id=None,
+    team_id_column="attacking_team_id",
+):
     """
     Overview of all shots on the pitch.
     Accepts DataFrame or list of dicts.
@@ -167,15 +259,21 @@ def plot_shot_overview(shots, xg_column="xg", show=True, away_on_left=False,
 
     if away_on_left:
         if home_team_id is None or away_team_id is None:
-            raise ValueError("home_team_id and away_team_id are required when away_on_left=True.")
+            raise ValueError(
+                "home_team_id and away_team_id are required when away_on_left=True."
+            )
         if team_id_column not in df.columns:
-            raise ValueError(f"Input must contain '{team_id_column}' when away_on_left=True.")
+            raise ValueError(
+                f"Input must contain '{team_id_column}' when away_on_left=True."
+            )
         pitch_length = 120
         away_mask = df[team_id_column] == away_team_id
         xs.loc[away_mask] = pitch_length - xs.loc[away_mask]
 
     colors = df.get(xg_column, pd.Series(np.zeros(len(df))))
-    hover_texts = df.apply(lambda row: "<br>".join([f"{col}: {row[col]}" for col in df.columns]), axis=1)
+    hover_texts = df.apply(
+        lambda row: "<br>".join([f"{col}: {row[col]}" for col in df.columns]), axis=1
+    )
 
     fig = create_pitch(pitch_theme=pitch_theme, show_axis_labels=show_axis_labels)
 
@@ -205,17 +303,24 @@ def plot_shot_overview(shots, xg_column="xg", show=True, away_on_left=False,
         )
     )
 
-
     if show:
         fig.show()
         fig.update_layout(title="Overview of Shots")
-    
+
     return fig
 
 
-def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
-                      scale='sqrt', zero_transparent=True, colorscale='YlOrRd',
-                      pitch_theme="green", show_axis_labels=True):
+def plot_shot_heatmap(
+    shots,
+    bins=(40, 30),
+    weights_col=None,
+    normalize=False,
+    scale="sqrt",
+    zero_transparent=True,
+    colorscale="YlOrRd",
+    pitch_theme="green",
+    show_axis_labels=True,
+):
     """
     Plot a 2D heatmap of shot locations on the pitch.
 
@@ -265,16 +370,18 @@ def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
     x_edges = np.linspace(0, 120, bins[0] + 1)
     y_edges = np.linspace(0, 80, bins[1] + 1)
 
-    H, x_edges_out, y_edges_out = np.histogram2d(xs, ys, bins=[x_edges, y_edges], weights=weights)
+    H, x_edges_out, y_edges_out = np.histogram2d(
+        xs, ys, bins=[x_edges, y_edges], weights=weights
+    )
 
     if normalize:
         maxv = H.max()
         H = H / (maxv if maxv > 0 else 1)
 
     # Prepare display values: apply scaling to emphasize low-intensity bins
-    if scale == 'log':
+    if scale == "log":
         z_disp = np.log1p(H)
-    elif scale == 'sqrt':
+    elif scale == "sqrt":
         z_disp = np.sqrt(H)
     else:
         z_disp = H.astype(float)
@@ -303,9 +410,9 @@ def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
     n_ticks = 5
     original_ticks = np.linspace(H_min_pos, H_max, n_ticks)
 
-    if scale == 'log':
+    if scale == "log":
         tickvals = np.log1p(original_ticks)
-    elif scale == 'sqrt':
+    elif scale == "sqrt":
         tickvals = np.sqrt(original_ticks)
     else:
         tickvals = original_ticks
@@ -323,20 +430,29 @@ def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
     hover_texts = np.empty_like(H_orig.T, dtype=object)
     for i in range(hover_texts.shape[0]):
         for j in range(hover_texts.shape[1]):
-            hover_texts[i, j] = f"Count: {fmt(H_orig.T[i, j])}<br>x: {XX[i, j]:.1f}<br>y: {YY[i, j]:.1f}"
+            hover_texts[i, j] = (
+                f"Count: {fmt(H_orig.T[i, j])}<br>x: {XX[i, j]:.1f}<br>y: {YY[i, j]:.1f}"
+            )
 
-    fig.add_trace(go.Heatmap(
-        x=x_centers,
-        y=y_centers,
-        z=z_for_plot,
-        text=hover_texts,
-        hoverinfo='text',
-        colorscale=colorscale,
-        reversescale=False,
-        opacity=0.85,
-        zsmooth='best',
-        colorbar=dict(title=(weights_col or 'Count'), tickmode='array', tickvals=tickvals, ticktext=ticktext),
-    ))
+    fig.add_trace(
+        go.Heatmap(
+            x=x_centers,
+            y=y_centers,
+            z=z_for_plot,
+            text=hover_texts,
+            hoverinfo="text",
+            colorscale=colorscale,
+            reversescale=False,
+            opacity=0.85,
+            zsmooth="best",
+            colorbar=dict(
+                title=(weights_col or "Count"),
+                tickmode="array",
+                tickvals=tickvals,
+                ticktext=ticktext,
+            ),
+        )
+    )
 
     # Ensure heatmap traces render on top of pitch shapes/traces by reordering traces
     heatmaps = [t for t in fig.data if isinstance(t, go.Heatmap)]
@@ -347,11 +463,23 @@ def plot_shot_heatmap(shots, bins=(40, 30), weights_col=None, normalize=False,
     fig.show()
 
 
-def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=5,
-                                 zero_transparent=True, colorscale='YlOrRd',
-                                 shrink=True, prior_shots=5.0, show_ci=True, ci_level=0.95,
-                                 plot_3d=False, height='conversion', height_scale=0.5,
-                                 pitch_theme="green", show_axis_labels=True):
+def plot_shot_conversion_heatmap(
+    shots,
+    bins=(30, 20),
+    goal_col=None,
+    min_shots=5,
+    zero_transparent=True,
+    colorscale="YlOrRd",
+    shrink=True,
+    prior_shots=5.0,
+    show_ci=True,
+    ci_level=0.95,
+    plot_3d=False,
+    height="conversion",
+    height_scale=0.5,
+    pitch_theme="green",
+    show_axis_labels=True,
+):
     """
     Plot a heatmap showing the percentage of shots converted to goals per bin.
 
@@ -417,8 +545,12 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
     x_edges = np.linspace(0, 120, bins[0] + 1)
     y_edges = np.linspace(0, 80, bins[1] + 1)
 
-    shots_count, x_edges_out, y_edges_out = np.histogram2d(xs, ys, bins=[x_edges, y_edges])
-    goals_count, _, _ = np.histogram2d(xs, ys, bins=[x_edges, y_edges], weights=goals_mask)
+    shots_count, x_edges_out, y_edges_out = np.histogram2d(
+        xs, ys, bins=[x_edges, y_edges]
+    )
+    goals_count, _, _ = np.histogram2d(
+        xs, ys, bins=[x_edges, y_edges], weights=goals_mask
+    )
 
     # Observed conversion rate (goals / shots) — compute safely to avoid divide warnings
     obs_conv = np.full_like(shots_count, np.nan, dtype=float)
@@ -455,6 +587,7 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
     if show_ci:
         try:
             from scipy.stats import norm
+
             zval = float(norm.ppf(1 - (1 - ci_level) / 2))
         except Exception:
             # Fallback z-values for common levels
@@ -475,9 +608,12 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
         wilson_high = np.full_like(n, np.nan, dtype=float)
         maskn = n > 0
         if np.any(maskn):
-            den = 1 + (zval ** 2) / n[maskn]
-            center = phat[maskn] + (zval ** 2) / (2 * n[maskn])
-            adj = zval * np.sqrt((phat[maskn] * (1 - phat[maskn]) + (zval ** 2) / (4 * n[maskn])) / n[maskn])
+            den = 1 + (zval**2) / n[maskn]
+            center = phat[maskn] + (zval**2) / (2 * n[maskn])
+            adj = zval * np.sqrt(
+                (phat[maskn] * (1 - phat[maskn]) + (zval**2) / (4 * n[maskn]))
+                / n[maskn]
+            )
             wilson_low[maskn] = (center - adj) / den
             wilson_high[maskn] = (center + adj) / den
     else:
@@ -499,7 +635,9 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
                 pct_text = f"<{int(min_shots)} shots (filtered)"
                 if show_ci:
                     ci_text = "N/A"
-                hover_line = f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}"
+                hover_line = (
+                    f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}"
+                )
                 if show_ci and wilson_low is not None:
                     hover_line += f"<br>{int(ci_level*100)}% CI: {ci_text}"
                 hover_texts[i, j] = hover_line
@@ -510,9 +648,13 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
                 low = wilson_low.T[i, j] * 100.0
                 high = wilson_high.T[i, j] * 100.0
                 ci_text = "N/A" if np.isnan(low) else f"{low:.1f}%–{high:.1f}%"
-                hover_texts[i, j] = f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}<br>{int(ci_level*100)}% CI: {ci_text}"
+                hover_texts[i, j] = (
+                    f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}<br>{int(ci_level*100)}% CI: {ci_text}"
+                )
             else:
-                hover_texts[i, j] = f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}"
+                hover_texts[i, j] = (
+                    f"Shots: {shots_n}<br>Goals: {goals_n}<br>Conversion: {pct_text}"
+                )
 
     # If 3D requested, render as 3D surface(s)
     if plot_3d:
@@ -521,13 +663,13 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
         X, Y = np.meshgrid(x_centers, y_centers)
 
         # Choose z-values for height
-        if height == 'shots':
+        if height == "shots":
             Z = shots_count.T.astype(float)
-            z_title = 'Shots'
+            z_title = "Shots"
         else:
             # use conversion percent (may contain nan for filtered bins)
             Z = z.copy()
-            z_title = 'Conversion (%)'
+            z_title = "Conversion (%)"
 
         # apply scaling
         Z_scaled = Z * float(height_scale)
@@ -536,15 +678,19 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
 
         # base pitch plane at z=0
         base_z = np.zeros_like(Z_scaled)
-        fig3d.add_trace(go.Surface(
-            x=X, y=Y, z=base_z,
-            surfacecolor=np.zeros_like(base_z),
-            colorscale=[[0, pitch_color], [1, pitch_color]],
-            showscale=False,
-            opacity=0.0 if is_transparent else 0.9,
-            hoverinfo='skip',
-            showlegend=False
-        ))
+        fig3d.add_trace(
+            go.Surface(
+                x=X,
+                y=Y,
+                z=base_z,
+                surfacecolor=np.zeros_like(base_z),
+                colorscale=[[0, pitch_color], [1, pitch_color]],
+                showscale=False,
+                opacity=0.0 if is_transparent else 0.9,
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
 
         # Add 3D line traces to replicate pitch markings (match create_pitch styling)
         pitch_length = 120
@@ -560,10 +706,20 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
         arc_radius = 10
 
         z0 = 0.0
+
         # Utility to add a 3d line
         def add_line(xs, ys, width=4, name=None):
-            fig3d.add_trace(go.Scatter3d(x=xs, y=ys, z=[z0] * len(xs), mode='lines',
-                                        line=dict(color=line_color, width=width), hoverinfo='skip', showlegend=False))
+            fig3d.add_trace(
+                go.Scatter3d(
+                    x=xs,
+                    y=ys,
+                    z=[z0] * len(xs),
+                    mode="lines",
+                    line=dict(color=line_color, width=width),
+                    hoverinfo="skip",
+                    showlegend=False,
+                )
+            )
 
         # Pitch boundary
         xb = [0, pitch_length, pitch_length, 0, 0]
@@ -581,34 +737,88 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
 
         # Penalty boxes
         left_pen = [0, pen_box_depth, pen_box_depth, 0, 0]
-        left_pen_y = [center_y - pen_box_width / 2, center_y - pen_box_width / 2,
-                      center_y + pen_box_width / 2, center_y + pen_box_width / 2,
-                      center_y - pen_box_width / 2]
+        left_pen_y = [
+            center_y - pen_box_width / 2,
+            center_y - pen_box_width / 2,
+            center_y + pen_box_width / 2,
+            center_y + pen_box_width / 2,
+            center_y - pen_box_width / 2,
+        ]
         add_line(left_pen, left_pen_y, width=4)
-        right_pen = [pitch_length, pitch_length - pen_box_depth, pitch_length - pen_box_depth, pitch_length, pitch_length]
+        right_pen = [
+            pitch_length,
+            pitch_length - pen_box_depth,
+            pitch_length - pen_box_depth,
+            pitch_length,
+            pitch_length,
+        ]
         right_pen_y = left_pen_y
         add_line(right_pen, right_pen_y, width=4)
 
         # Goalkeeper boxes
         left_gk = [0, gk_box_depth, gk_box_depth, 0, 0]
-        left_gk_y = [center_y - gk_box_width / 2, center_y - gk_box_width / 2,
-                     center_y + gk_box_width / 2, center_y + gk_box_width / 2,
-                     center_y - gk_box_width / 2]
+        left_gk_y = [
+            center_y - gk_box_width / 2,
+            center_y - gk_box_width / 2,
+            center_y + gk_box_width / 2,
+            center_y + gk_box_width / 2,
+            center_y - gk_box_width / 2,
+        ]
         add_line(left_gk, left_gk_y, width=4)
-        right_gk = [pitch_length, pitch_length - gk_box_depth, pitch_length - gk_box_depth, pitch_length, pitch_length]
+        right_gk = [
+            pitch_length,
+            pitch_length - gk_box_depth,
+            pitch_length - gk_box_depth,
+            pitch_length,
+            pitch_length,
+        ]
         add_line(right_gk, left_gk_y, width=4)
 
         # Goals (thicker)
-        add_line([-goal_depth, 0], [center_y - goal_width / 2, center_y - goal_width / 2], width=8)
-        add_line([-goal_depth, 0], [center_y + goal_width / 2, center_y + goal_width / 2], width=8)
-        add_line([pitch_length, pitch_length + goal_depth], [center_y - goal_width / 2, center_y - goal_width / 2], width=8)
-        add_line([pitch_length, pitch_length + goal_depth], [center_y + goal_width / 2, center_y + goal_width / 2], width=8)
+        add_line(
+            [-goal_depth, 0],
+            [center_y - goal_width / 2, center_y - goal_width / 2],
+            width=8,
+        )
+        add_line(
+            [-goal_depth, 0],
+            [center_y + goal_width / 2, center_y + goal_width / 2],
+            width=8,
+        )
+        add_line(
+            [pitch_length, pitch_length + goal_depth],
+            [center_y - goal_width / 2, center_y - goal_width / 2],
+            width=8,
+        )
+        add_line(
+            [pitch_length, pitch_length + goal_depth],
+            [center_y + goal_width / 2, center_y + goal_width / 2],
+            width=8,
+        )
 
         # Penalty spots
-        fig3d.add_trace(go.Scatter3d(x=[penalty_spot], y=[center_y], z=[z0], mode='markers',
-                         marker=dict(size=4, color=line_color), hoverinfo='skip', showlegend=False))
-        fig3d.add_trace(go.Scatter3d(x=[pitch_length - penalty_spot], y=[center_y], z=[z0], mode='markers',
-                         marker=dict(size=4, color=line_color), hoverinfo='skip', showlegend=False))
+        fig3d.add_trace(
+            go.Scatter3d(
+                x=[penalty_spot],
+                y=[center_y],
+                z=[z0],
+                mode="markers",
+                marker=dict(size=4, color=line_color),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        fig3d.add_trace(
+            go.Scatter3d(
+                x=[pitch_length - penalty_spot],
+                y=[center_y],
+                z=[z0],
+                mode="markers",
+                marker=dict(size=4, color=line_color),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
 
         # Penalty arcs (left and right)
         d = pen_box_depth - penalty_spot
@@ -618,36 +828,51 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
         xs_left = (penalty_spot + arc_radius * np.cos(theta_left)).tolist()
         ys_left = (center_y + arc_radius * np.sin(theta_left)).tolist()
         add_line(xs_left, ys_left, width=4)
-        xs_right = (pitch_length - penalty_spot + arc_radius * np.cos(theta_right)).tolist()
+        xs_right = (
+            pitch_length - penalty_spot + arc_radius * np.cos(theta_right)
+        ).tolist()
         ys_right = (center_y + arc_radius * np.sin(theta_right)).tolist()
         add_line(xs_right, ys_right, width=4)
 
         # conversion / shots surface (holes where NaN)
-        fig3d.add_trace(go.Surface(
-            x=X, y=Y, z=Z_scaled,
-            surfacecolor=Z,  # color by original values (percent or counts)
-            colorscale=colorscale,
-            cmin=np.nanmin(Z) if np.isfinite(np.nanmin(Z)) else 0,
-            cmax=np.nanmax(Z) if np.isfinite(np.nanmax(Z)) else 1,
-            colorbar=dict(title=z_title, ticksuffix='%' if z_title.startswith('Conversion') else ''),
-            hovertemplate='%{x:.1f}, %{y:.1f}<br>' + z_title + ': %{customdata[0]:.2f}<br>Shots: %{customdata[1]:.0f}',
-            customdata=np.dstack((np.nan_to_num(Z, nan=np.nan), shots_count.T)),
-            showscale=True,
-            opacity=0.9,
-            showlegend=False
-        ))
+        fig3d.add_trace(
+            go.Surface(
+                x=X,
+                y=Y,
+                z=Z_scaled,
+                surfacecolor=Z,  # color by original values (percent or counts)
+                colorscale=colorscale,
+                cmin=np.nanmin(Z) if np.isfinite(np.nanmin(Z)) else 0,
+                cmax=np.nanmax(Z) if np.isfinite(np.nanmax(Z)) else 1,
+                colorbar=dict(
+                    title=z_title,
+                    ticksuffix="%" if z_title.startswith("Conversion") else "",
+                ),
+                hovertemplate="%{x:.1f}, %{y:.1f}<br>"
+                + z_title
+                + ": %{customdata[0]:.2f}<br>Shots: %{customdata[1]:.0f}",
+                customdata=np.dstack((np.nan_to_num(Z, nan=np.nan), shots_count.T)),
+                showscale=True,
+                opacity=0.9,
+                showlegend=False,
+            )
+        )
 
         # camera & layout
         max_z = np.nanmax(Z_scaled)
         fig3d.update_layout(
-            title='Shot Conversion Heatmap (3D)',
+            title="Shot Conversion Heatmap (3D)",
             scene=dict(
-                xaxis=dict(title='X', range=[0, 120]),
-                yaxis=dict(title='Y', range=[0, 80]),
-                zaxis=dict(title=z_title, range=[0, float(max_z * 1.2) if np.isfinite(max_z) else 1]),
-                aspectmode='auto'
+                xaxis=dict(title="X", range=[0, 120]),
+                yaxis=dict(title="Y", range=[0, 80]),
+                zaxis=dict(
+                    title=z_title,
+                    range=[0, float(max_z * 1.2) if np.isfinite(max_z) else 1],
+                ),
+                aspectmode="auto",
             ),
-            width=1200, height=800
+            width=1200,
+            height=800,
         )
 
         return fig3d
@@ -655,18 +880,20 @@ def plot_shot_conversion_heatmap(shots, bins=(30, 20), goal_col=None, min_shots=
     # 2D heatmap (existing behavior)
     fig = create_pitch(pitch_theme=pitch_theme, show_axis_labels=show_axis_labels)
 
-    fig.add_trace(go.Heatmap(
-        x=x_centers,
-        y=y_centers,
-        z=z,
-        text=hover_texts,
-        hoverinfo='text',
-        colorscale=colorscale,
-        reversescale=False,
-        opacity=0.85,
-        zsmooth='best',
-        colorbar=dict(title='Conversion (%)', ticksuffix='%')
-    ))
+    fig.add_trace(
+        go.Heatmap(
+            x=x_centers,
+            y=y_centers,
+            z=z,
+            text=hover_texts,
+            hoverinfo="text",
+            colorscale=colorscale,
+            reversescale=False,
+            opacity=0.85,
+            zsmooth="best",
+            colorbar=dict(title="Conversion (%)", ticksuffix="%"),
+        )
+    )
 
     # Ensure heatmap traces render on top
     heatmaps = [t for t in fig.data if isinstance(t, go.Heatmap)]
@@ -697,7 +924,7 @@ def plot_shot_details(shot_data, show=True, pitch_theme="green", show_axis_label
     # ----------------------------------------------------------
     # Convert freeze_frame → DataFrame
     # ----------------------------------------------------------
-    shot = shot_data.get('shot', {})
+    shot = shot_data.get("shot", {})
     if isinstance(shot, list):
         shot = shot[0] if shot else {}
     if not isinstance(shot, dict):
@@ -715,18 +942,23 @@ def plot_shot_details(shot_data, show=True, pitch_theme="green", show_axis_label
     # Hover text
     df["hover"] = df.apply(
         lambda row: f"Player: {row['player_name']}<br>"
-                    f"Position: {row['position_name']}<br>"
-                    f"Team: {row['team']}", axis=1
+        f"Position: {row['position_name']}<br>"
+        f"Team: {row['team']}",
+        axis=1,
     )
 
     # Colors
     colors = df["teammate"].map({True: "blue", False: "red"})
 
     # Identify goalkeeper(s) and give them a distinct shape/linewidth to stand out
-    df["is_opposition_goalkeeper"] = df["position_name"].astype(str).str.lower().str.contains("goal") & (~df["teammate"])
+    df["is_opposition_goalkeeper"] = df["position_name"].astype(
+        str
+    ).str.lower().str.contains("goal") & (~df["teammate"])
     # Marker properties per-point (Plotly accepts lists for per-point marker attributes)
     marker_colors = np.where(df["is_opposition_goalkeeper"], "red", colors).tolist()
-    marker_symbols = np.where(df["is_opposition_goalkeeper"], "diamond", "circle").tolist()
+    marker_symbols = np.where(
+        df["is_opposition_goalkeeper"], "diamond", "circle"
+    ).tolist()
     marker_sizes = np.where(df["is_opposition_goalkeeper"], 14, 12).tolist()
     marker_line_widths = np.where(df["is_opposition_goalkeeper"], 3, 1).tolist()
 
@@ -735,40 +967,50 @@ def plot_shot_details(shot_data, show=True, pitch_theme="green", show_axis_label
     # -----------------------------
     # Freeze frame players
     # -----------------------------
-    fig.add_trace(go.Scatter(
-        x=df["x"], y=df["y"],
-        mode="markers+text",
-        marker=dict(size=marker_sizes, color=marker_colors, symbol=marker_symbols,
-                    line=dict(color="black", width=marker_line_widths)),
-        # text=df["player_name"],
-        textposition="top center",
-        hovertext=df["hover"],
-        hoverinfo="text",
-        name="Players"
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=df["x"],
+            y=df["y"],
+            mode="markers+text",
+            marker=dict(
+                size=marker_sizes,
+                color=marker_colors,
+                symbol=marker_symbols,
+                line=dict(color="black", width=marker_line_widths),
+            ),
+            # text=df["player_name"],
+            textposition="top center",
+            hovertext=df["hover"],
+            hoverinfo="text",
+            name="Players",
+        )
+    )
 
     # -----------------------------
     # Shooter marker
     # -----------------------------
     shooter_x, shooter_y = shot_data["location"][:2]
-    shooter_name = shot_data.get('player', [])
+    shooter_name = shot_data.get("player", [])
     shooter_name = shooter_name.get("name", "")
 
-    fig.add_trace(go.Scatter(
-        x=[shooter_x], y=[shooter_y],
-        mode="markers+text",
-        marker=dict(size=16, color="gold", line=dict(color="black", width=3), symbol="star"),
-        # text=["Shooter"],
-        textposition="top center",
-        hovertext=f"Shooter: {shooter_name}",
-        hoverinfo="text",
-        name="Shooter"
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=[shooter_x],
+            y=[shooter_y],
+            mode="markers+text",
+            marker=dict(
+                size=16, color="gold", line=dict(color="black", width=3), symbol="star"
+            ),
+            # text=["Shooter"],
+            textposition="top center",
+            hovertext=f"Shooter: {shooter_name}",
+            hoverinfo="text",
+            name="Shooter",
+        )
+    )
 
     # Layout
-    fig.update_layout(
-        title="Shot Detail with Freeze Frame"
-    )
+    fig.update_layout(title="Shot Detail with Freeze Frame")
 
     if show:
         fig.show()
