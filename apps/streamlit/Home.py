@@ -13,7 +13,7 @@ col_a, col_b, col_c = st.columns(3)
 with col_a:
     st.page_link("pages/Teams.py", label="Teams", icon=":material/groups:")
 with col_b:
-    st.page_link("pages/Matches.py", label="Matches", icon=":material/sports_soccer:")
+    st.page_link("pages/Match Data.py", label="Match Data", icon=":material/sports_soccer:")
 with col_c:
     st.page_link("pages/Players.py", label="Players", icon=":material/person:")
 

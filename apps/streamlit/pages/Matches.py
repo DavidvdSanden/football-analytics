@@ -11,7 +11,6 @@ if str(SRC_PATH) not in sys.path:
 from football_analytics.utils import helper, visuals
 
 st.title("Matches")
-st.write("...to be implemented...")
 
 
 def _parse_shot_row(row: dict) -> dict:
