@@ -190,7 +190,15 @@ match_header(
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
 
 st.markdown("#### xG Progression")
-st.write("TO DO")
+fig = visuals.plot_xg_progression(
+    shots=shot_data,
+    home_team_id=selected_match_df["home_team_id"].values[0],
+    away_team_id=selected_match_df["away_team_id"].values[0],
+    show=False,
+    home_team_name=home_team,
+    away_team_name=away_team,
+)
+st.plotly_chart(fig, use_container_width=True)
 
 
 st.markdown("#### Shot Overview")

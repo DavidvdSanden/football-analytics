@@ -1015,3 +1015,113 @@ def plot_shot_details(shot_data, show=True, pitch_theme="green", show_axis_label
     if show:
         fig.show()
     return fig
+
+
+def plot_xg_progression(
+    shots: pd.DataFrame,
+    home_team_id: int,
+    away_team_id: int,
+    home_team_name: str = "Home",
+    away_team_name: str = "Away",
+    xg_col: str = "statsbomb_xg",
+    outcome_col: str = "outcome",
+    goal_value: str = "Goal",
+    show: bool = True,
+):
+    df = shots.copy()
+
+    # 1. Continuous match time
+    df["match_time"] = df["minute"] + df["second"] / 60
+
+    # 2. Split teams
+    home = df[df["attacking_team_id"] == home_team_id].copy()
+    away = df[df["attacking_team_id"] == away_team_id].copy()
+
+    # 3. Sort
+    home = home.sort_values("match_time")
+    away = away.sort_values("match_time")
+
+    # 4. Cumulative xG
+    home["cum_xg"] = home[xg_col].cumsum()
+    away["cum_xg"] = away[xg_col].cumsum()
+
+    # 5. Determine common end time
+    last_shot_time = df["match_time"].max()
+    end_time = max(90, last_shot_time)
+
+    # 6. Extend for step plotting
+    def extend_to_end(df_team):
+        if df_team.empty:
+            return pd.DataFrame({"match_time": [0, end_time], "cum_xg": [0, 0]})
+
+        last_row = df_team.iloc[-1]
+        return pd.concat(
+            [
+                pd.DataFrame({"match_time": [0], "cum_xg": [0]}),
+                df_team[["match_time", "cum_xg"]],
+                pd.DataFrame(
+                    {
+                        "match_time": [end_time],
+                        "cum_xg": [last_row["cum_xg"]],
+                    }
+                ),
+            ],
+            ignore_index=True,
+        )
+
+    home_plot = extend_to_end(home)
+    away_plot = extend_to_end(away)
+
+    # 7. Plot step lines
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=home_plot["match_time"],
+            y=home_plot["cum_xg"],
+            mode="lines",
+            name=home_team_name,
+            line=dict(width=3, shape="hv"),
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=away_plot["match_time"],
+            y=away_plot["cum_xg"],
+            mode="lines",
+            name=away_team_name,
+            line=dict(width=3, shape="hv", dash="dash"),
+        )
+    )
+
+    # 8. Add goal icons
+    def add_goal_icons(df_team):
+        goals = df_team[df_team[outcome_col] == goal_value]
+        for _, row in goals.iterrows():
+            fig.add_annotation(
+                x=row["match_time"],
+                y=row["cum_xg"],
+                text="⚽",
+                showarrow=False,
+                yshift=8,
+                font=dict(size=16),
+            )
+
+    add_goal_icons(home)
+    add_goal_icons(away)
+
+    # 9. Layout
+    fig.update_layout(
+        title="xG Progression",
+        xaxis_title="Match time (minutes)",
+        yaxis_title="Cumulative xG",
+        hovermode="x unified",
+        template="plotly_white",
+    )
+
+    fig.add_vline(x=45, line_dash="dot", opacity=0.4)
+
+    if show:
+        fig.show()
+    return fig
