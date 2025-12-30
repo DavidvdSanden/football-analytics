@@ -209,6 +209,10 @@ def extract_shot_features(event, match_id=None):
         'shot_taker_id': shot_taker.get('id'),
         'keeper_is_in_shot_triangle': keeper_is_in_shot_triangle,
         'under_pressure': under_pressure,
+        'timestamp': _parse_time(event.get('timestamp', None)),
+        'period': event.get('period', None),
+        'minute': event.get('minute', None),
+        'second': event.get('second', None),
     }
 
     return shot_data_row
