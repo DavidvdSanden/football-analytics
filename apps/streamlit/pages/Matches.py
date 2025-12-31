@@ -1,14 +1,13 @@
 from pathlib import Path
 import sys
-
+from football_analytics.visuals import shots
 import streamlit as st
+from football_analytics.utils import helper
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.append(str(SRC_PATH))
-
-from football_analytics.utils import helper, visuals
 
 st.title("Matches")
 
@@ -34,11 +33,7 @@ def display_shot_by_id(
 ) -> None:
     supabase = helper.get_supabase_client()
     response = (
-        supabase.table(table_name)
-        .select("*")
-        .eq(id_column, shot_id)
-        .limit(1)
-        .execute()
+        supabase.table(table_name).select("*").eq(id_column, shot_id).limit(1).execute()
     )
     data = response.data or []
     if not data:
@@ -54,7 +49,7 @@ def display_shot_by_id(
         st.error("full_json is not a valid JSON object.")
         return
 
-    fig = visuals.plot_shot_details(shot_payload, show=False)
+    fig = shots.plot_shot_details(shot_payload, show=False)
     st.plotly_chart(fig, use_container_width=True)
 
 

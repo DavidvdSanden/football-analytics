@@ -1,10 +1,17 @@
 from pathlib import Path
 import sys
+from football_analytics.visuals import shots
 from supabase import create_client
 import streamlit as st
-from football_analytics.utils import helper, visuals
+from football_analytics.utils import helper
 import pandas as pd
-import textwrap
+from football_analytics.streamlit.components import match_header
+from football_analytics.streamlit.data import (
+    load_competitions,
+    load_teams,
+    load_matches,
+    load_shot_by_match,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -15,85 +22,6 @@ if str(SRC_PATH) not in sys.path:
 
 st.set_page_config(page_title="Match Data", layout="wide")
 st.title("Match Details")
-
-
-supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
-
-# -------------------
-### Helper Functions ###
-# -------------------
-
-
-@st.cache_data(ttl=300)
-def load_competitions():
-    response = (
-        supabase.table("competitions")
-        .select("competition_id, competition_name, season_name, season_id")
-        .execute()
-    )
-    df = pd.DataFrame(response.data)
-    return df
-
-
-@st.cache_data(ttl=300)
-def load_teams():
-    response = supabase.table("teams").select("team_id, team_name").execute()
-    df = pd.DataFrame(response.data)
-    return df
-
-
-@st.cache_data(ttl=300)
-def load_matches():
-    response = (
-        supabase.table("matches")
-        .select(
-            "match_id, home_team_id, away_team_id, home_score, away_score, match_date, competition_id, season_id"
-        )
-        .execute()
-    )
-    df = pd.DataFrame(response.data)
-    return df
-
-
-@st.cache_data(ttl=300)
-def load_shot_by_match(match_id: str):
-    response = supabase.table("shots").select("*").eq("match_id", match_id).execute()
-    return response.data
-
-
-def match_header(home_team, away_team, home_goals, away_goals):
-    html = f"""
-        <div style="width:100%; text-align:center;">
-            <!-- Team names -->
-            <div style="
-                display: grid;
-                grid-template-columns: 1fr auto 1fr;
-                align-items: center;
-                font-size: 22px;
-                font-weight: 600;
-                margin-bottom: 0.25rem;
-            ">
-                <div style="text-align: right; padding-right: 0.5rem;">{home_team}</div>
-                <div style="opacity: 0.6; text-align: center;">–</div>
-                <div style="text-align: left; padding-left: 0.5rem;">{away_team}</div>
-            </div>
-            <!-- Score -->
-            <div style="
-                display: grid;
-                grid-template-columns: 1fr auto 1fr;
-                align-items: center;
-                font-size: 80px;
-                font-weight: 800;
-                line-height: 1;
-            ">
-                <div style="text-align: right; padding-right: 0.5rem;">{home_goals}</div>
-                <div style="opacity: 0.6; text-align: center;">–</div>
-                <div style="text-align: left; padding-left: 0.5rem;">{away_goals}</div>
-            </div>
-        </div>
-        """
-    st.markdown(textwrap.dedent(html), unsafe_allow_html=True)
-
 
 competitions = load_competitions()
 teams = load_teams()
@@ -163,9 +91,7 @@ matches_with_names["match_label"] = (
 
 matches_with_names = matches_with_names.sort_values(by="match_date", ascending=False)
 
-match_label = st.sidebar.selectbox(
-    "Match", matches_with_names["match_label"].tolist()
-)
+match_label = st.sidebar.selectbox("Match", matches_with_names["match_label"].tolist())
 
 match_id = matches_with_names.loc[
     matches_with_names["match_label"] == match_label, "match_id"
@@ -192,7 +118,7 @@ match_header(
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
 
 st.markdown("#### xG Progression")
-fig = visuals.plot_xg_progression(
+fig = shots.plot_xg_progression(
     shots=shot_data,
     home_team_id=selected_match_df["home_team_id"].values[0],
     away_team_id=selected_match_df["away_team_id"].values[0],
@@ -204,7 +130,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 
 st.markdown("#### Shot Overview")
-fig = visuals.plot_shot_overview(
+fig = shots.plot_shot_overview(
     shot_data[
         [
             "statsbomb_event_id",
