@@ -102,9 +102,9 @@ matches = load_matches()
 # -------------------
 ### Match Selection ###
 # -------------------
-st.subheader("Match Selection")
+st.sidebar.subheader("Match Selection")
 # --- Competition ---
-competition = st.selectbox(
+competition = st.sidebar.selectbox(
     "Competition", sorted(competitions["competition_name"].dropna().unique())
 )
 selected_competition_id = competitions.loc[
@@ -117,7 +117,7 @@ seasons = sorted(
     .dropna()
     .unique()
 )
-season = st.selectbox("Season", seasons)
+season = st.sidebar.selectbox("Season", seasons)
 selected_season_id = competitions.loc[
     (competitions["competition_name"] == competition)
     & (competitions["season_name"] == season),
@@ -138,7 +138,7 @@ matches_filtered = matches.loc[
 ].copy()
 
 if matches_filtered.empty:
-    st.selectbox("Match", ["No matches available"])
+    st.sidebar.selectbox("Match", ["No matches available"])
     st.info("No matches available for the selected competition and season.")
     st.stop()
 
@@ -163,7 +163,9 @@ matches_with_names["match_label"] = (
 
 matches_with_names = matches_with_names.sort_values(by="match_date", ascending=False)
 
-match_label = st.selectbox("Match", matches_with_names["match_label"].tolist())
+match_label = st.sidebar.selectbox(
+    "Match", matches_with_names["match_label"].tolist()
+)
 
 match_id = matches_with_names.loc[
     matches_with_names["match_label"] == match_label, "match_id"
