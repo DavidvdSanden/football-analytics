@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, date, time
 import numpy as np
-import football_analytics.utils.helper as helper
+import football_analytics.utils.shot_geometry as shot_geometry
 
 
 def _parse_int(value):
@@ -120,17 +120,17 @@ def extract_shot_features(event, match_id=None):
         ]
         teammates = [p["location"] for p in shot["freeze_frame"] if p["teammate"]]
 
-        keeper_distance = helper.euclidean(shot_loc, keeper_loc)
-        num_def_in_shot_triangle = helper.count_opponents_in_shot_triangle(
+        keeper_distance = shot_geometry.euclidean(shot_loc, keeper_loc)
+        num_def_in_shot_triangle = shot_geometry.count_opponents_in_shot_triangle(
             shot_loc, LEFT_POST, RIGHT_POST, shot["freeze_frame"]
         )
         num_teammates_in_box = sum(
             [1 for t in teammates if t[0] > 100 and 36 <= t[1] <= 44]
         )
-        frac_goal_uncovered, blocked_ang, total_ang = helper.blocked_goal_fraction(
+        frac_goal_uncovered, blocked_ang, total_ang = shot_geometry.blocked_goal_fraction(
             shot_loc, LEFT_POST, RIGHT_POST, defenders, keeper=keeper_loc
         )
-        keeper_is_in_shot_triangle = helper.keeper_in_shot_triangle(
+        keeper_is_in_shot_triangle = shot_geometry.keeper_in_shot_triangle(
             shot_loc, LEFT_POST, RIGHT_POST, shot["freeze_frame"]
         )
     else:
@@ -150,13 +150,16 @@ def extract_shot_features(event, match_id=None):
     outcome = shot.get("outcome", {}).get("name")
 
     # Basic features
-    distance_to_goal = helper.euclidean(shot_loc, GOAL_CENTER)
-    angle_to_goal = helper.shot_angle(shot_loc, LEFT_POST, RIGHT_POST)
+    distance_to_goal = shot_geometry.euclidean(shot_loc, GOAL_CENTER)
+    angle_to_goal = shot_geometry.shot_angle(shot_loc, LEFT_POST, RIGHT_POST)
     min_defender_distance = (
-        min([helper.euclidean(shot_loc, d) for d in defenders]) if defenders else None
+        min([shot_geometry.euclidean(shot_loc, d) for d in defenders])
+        if defenders
+        else None
     )
     avg_defender_distance = (
-        sum([helper.euclidean(shot_loc, d) for d in defenders]) / len(defenders)
+        sum([shot_geometry.euclidean(shot_loc, d) for d in defenders])
+        / len(defenders)
         if defenders
         else None
     )
@@ -171,7 +174,7 @@ def extract_shot_features(event, match_id=None):
         if num_teammates_in_box is None:
             num_teammates_in_box = 0
         if frac_goal_uncovered is None:
-            frac_goal_uncovered, _, _ = helper.blocked_goal_fraction(
+            frac_goal_uncovered, _, _ = shot_geometry.blocked_goal_fraction(
                 shot_loc, LEFT_POST, RIGHT_POST, [], keeper=GOAL_CENTER
             )
         penalty_area_x = 102

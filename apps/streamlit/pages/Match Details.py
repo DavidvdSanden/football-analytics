@@ -1,9 +1,7 @@
 from pathlib import Path
 import sys
 from football_analytics.visuals import shots
-from supabase import create_client
 import streamlit as st
-from football_analytics.utils import helper
 import pandas as pd
 from football_analytics.streamlit.components import match_header
 from football_analytics.streamlit.data import (
