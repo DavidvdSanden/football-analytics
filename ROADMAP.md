@@ -30,7 +30,7 @@ Develop skills in:
 - [ ] Team tactics
 
 #### 🎨 Front End
-- [ ] Visualization (Streamlit or similar)
+- [x] Visualization (Streamlit or similar)
 
 #### 💰 External Data
 - [ ] Transfer value scraping
@@ -39,15 +39,13 @@ Develop skills in:
 
 ## 🧩 Next Milestones
 
-**Milestone 0 – Data Collection**
-- Add match ID to shot table
-
 **Milestone 1 – Visualization**
-- Shot maps & xG distributions
-- Front-end prototype
-- xG progression visual
+- Add calculation of in-house xG model
 
-**Milestone 2 – Player Value**
+**Milestone 2 – Data Enrichment**
+- Save all events (passes, dribbles, tackles, etc.) to DB for later usage in xT/xV model
+
+**Milestone 3 – Player Value**
 - xT model
 - Player contribution metrics
 - Transfermarket scraping

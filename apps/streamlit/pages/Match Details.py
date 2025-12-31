@@ -115,6 +115,17 @@ match_header(
 
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
 
+# -------------
+### Calculate xG ###
+# -------------
+
+# Toggle for in-house xG model
+use_inhouse_xg = st.sidebar.checkbox("Use in-house xG model", value=False)
+
+if use_inhouse_xg:
+    pass
+
+
 st.markdown("#### xG Progression")
 fig = shots.plot_xg_progression(
     shots=shot_data,
