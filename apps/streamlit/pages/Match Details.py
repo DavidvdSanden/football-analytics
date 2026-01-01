@@ -10,6 +10,7 @@ from football_analytics.streamlit.data import (
     load_matches,
     load_shot_by_match,
 )
+from football_analytics.streamlit.xg import apply_xg_model_selection
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -115,18 +116,11 @@ match_header(
 
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
 
-# -------------
-### Calculate xG ###
-# -------------
+shot_data, xg_column, xg_label = apply_xg_model_selection(
+    shot_data, model_dir=PROJECT_ROOT / "xg_model" / "nn_models"
+)
 
-# Toggle for in-house xG model
-use_inhouse_xg = st.sidebar.checkbox("Use in-house xG model", value=False)
-
-if use_inhouse_xg:
-    pass
-
-
-st.markdown("#### xG Progression")
+st.markdown(f"#### xG Progression ({xg_label})")
 fig = shots.plot_xg_progression(
     shots=shot_data,
     home_team_id=selected_match_df["home_team_id"].values[0],
@@ -134,27 +128,28 @@ fig = shots.plot_xg_progression(
     show=False,
     home_team_name=home_team,
     away_team_name=away_team,
+    xg_col=xg_column,
 )
 st.plotly_chart(fig, use_container_width=True)
 
 
-st.markdown("#### Shot Overview")
+st.markdown(f"#### Shot Overview ({xg_label})")
+shot_overview_columns = [
+    "statsbomb_event_id",
+    "minute",
+    "second",
+    "x1",
+    "y1",
+    "outcome",
+    "shot_taker_id",
+    "attacking_team_id",
+]
+if xg_column not in shot_overview_columns:
+    shot_overview_columns.insert(5, xg_column)
 fig = shots.plot_shot_overview(
-    shot_data[
-        [
-            "statsbomb_event_id",
-            "minute",
-            "second",
-            "x1",
-            "y1",
-            "statsbomb_xg",
-            "outcome",
-            "shot_taker_id",
-            "attacking_team_id",
-        ]
-    ].to_dict(orient="records"),
+    shot_data[shot_overview_columns].to_dict(orient="records"),
     show=False,
-    xg_column="statsbomb_xg",
+    xg_column=xg_column,
     away_on_left=True,
     home_team_id=selected_match_df["home_team_id"].values[0],
     away_team_id=selected_match_df["away_team_id"].values[0],
