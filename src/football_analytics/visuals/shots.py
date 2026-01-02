@@ -18,7 +18,10 @@ def create_pitch(
     show_axis_labels=True,
     x_range=None,
     y_range=None,
-    lock_aspect=False,
+    lock_aspect=True,
+    padding=5,
+    layout_margin=None,
+    fixed_size=True,
 ):
     """
     Returns a Plotly figure object with a football pitch drawn.
@@ -33,6 +36,12 @@ def create_pitch(
         Custom axis ranges for zooming, e.g. [20, 100]. If None, defaults are used.
     lock_aspect : bool
         If True, lock the aspect ratio so 1 unit in x equals 1 unit in y.
+    padding : float
+        Padding (in pitch units) to add around the pitch when x_range/y_range are None.
+    layout_margin : dict or None
+        Plotly layout margin override. If None, defaults are used.
+    fixed_size : bool
+        If True, set an explicit width/height. If False, allow responsive sizing.
     """
     pitch_length = 120
     pitch_width = 80
@@ -210,8 +219,8 @@ def create_pitch(
     )
 
     # Layout
-    default_x_range = [-5, pitch_length + 5]
-    default_y_range = [-5, pitch_width + 5]
+    default_x_range = [-padding, pitch_length + padding]
+    default_y_range = [-padding, pitch_width + padding]
     xaxis_cfg = dict(
         range=x_range or default_x_range,
         showgrid=False,
@@ -233,15 +242,20 @@ def create_pitch(
         xaxis_cfg["constrain"] = "range"
         yaxis_cfg["constrain"] = "range"
 
-    fig.update_layout(
+    layout_kwargs = dict(
         xaxis=xaxis_cfg,
         yaxis=yaxis_cfg,
-        width=1100,
-        height=700,
         plot_bgcolor=pitch_color,
         paper_bgcolor="rgba(0,0,0,0)" if is_transparent else pitch_color,
         showlegend=False,
+        margin=layout_margin or dict(l=5, r=5, t=5, b=5),
     )
+    if fixed_size:
+        layout_kwargs.update(width=600, height=400)
+    else:
+        layout_kwargs.update(autosize=True)
+
+    fig.update_layout(**layout_kwargs)
 
     return fig
 
@@ -256,6 +270,9 @@ def plot_shot_overview(
     home_team_id=None,
     away_team_id=None,
     team_id_column="attacking_team_id",
+    pitch_padding=5,
+    layout_margin=None,
+    fixed_size=False,
 ):
     """
     Overview of all shots on the pitch.
@@ -267,9 +284,16 @@ def plot_shot_overview(
         shots = pd.DataFrame(shots)
     df = shots.copy()
 
-    # Determine coordinates
+    # Determine coordinates (prefer x1/y1 unless they are empty)
     if {"x1", "y1"}.issubset(df.columns):
         x_col, y_col = "x1", "y1"
+        if df[x_col].isna().all() or df[y_col].isna().all():
+            if {"x", "y"}.issubset(df.columns):
+                x_col, y_col = "x", "y"
+            else:
+                raise ValueError(
+                    "Input must contain non-empty (x1, y1) or (x, y) columns."
+                )
     elif {"x", "y"}.issubset(df.columns):
         x_col, y_col = "x", "y"
     else:
@@ -295,7 +319,13 @@ def plot_shot_overview(
         lambda row: "<br>".join([f"{col}: {row[col]}" for col in df.columns]), axis=1
     )
 
-    fig = create_pitch(pitch_theme=pitch_theme, show_axis_labels=show_axis_labels)
+    fig = create_pitch(
+        pitch_theme=pitch_theme,
+        show_axis_labels=show_axis_labels,
+        padding=pitch_padding,
+        layout_margin=layout_margin,
+        fixed_size=fixed_size,
+    )
 
     fig.add_trace(
         go.Scatter(
@@ -313,9 +343,15 @@ def plot_shot_overview(
                 line=dict(color="#3F4646", width=1),
                 colorbar=dict(
                     title=dict(
-                        text="Expected Goals (xG)",
-                        font=dict(size=12),
-                    )
+                        text="Expected<br>Goals (xG)",
+                        font=dict(size=10),
+                    ),
+                    len=0.6,
+                    thickness=10,
+                    y=0.5,
+                    yanchor="middle",
+                    bgcolor="rgba(0,0,0,0)",
+                    outlinewidth=0,
                 ),
             ),
             text=hover_texts,
@@ -924,7 +960,9 @@ def plot_shot_conversion_heatmap(
     return fig
 
 
-def plot_shot_details(shot_data, show=True, pitch_theme="green", show_axis_labels=True):
+def plot_shot_details(
+    shot_data, show=True, pitch_theme="green", show_axis_labels=True, title=None
+):
     """
     Plots player positions at the moment of a shot and highlights the shooter.
 
@@ -1030,7 +1068,8 @@ def plot_shot_details(shot_data, show=True, pitch_theme="green", show_axis_label
     )
 
     # Layout
-    fig.update_layout(title="Shot Detail with Freeze Frame")
+    if title:
+        fig.update_layout(title)
 
     if show:
         fig.show()
@@ -1133,11 +1172,12 @@ def plot_xg_progression(
 
     # 9. Layout
     fig.update_layout(
-        title="xG Progression",
         xaxis_title="Match time (minutes)",
         yaxis_title="Cumulative xG",
         hovermode="x unified",
         template="plotly_white",
+        height=300,
+        margin=dict(l=5, r=5, t=5, b=5),
     )
 
     fig.add_vline(x=45, line_dash="dot", opacity=0.4)

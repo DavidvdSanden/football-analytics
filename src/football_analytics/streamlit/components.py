@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import textwrap
 
 
@@ -34,3 +35,34 @@ def match_header(home_team, away_team, home_goals, away_goals):
         </div>
         """
     st.markdown(textwrap.dedent(html), unsafe_allow_html=True)
+
+
+def enable_plotly_auto_resize():
+    html = """
+        <script>
+        (function () {
+            const parentDoc = window.parent.document;
+            const target =
+                parentDoc.querySelector('[data-testid="stMain"]') ||
+                parentDoc.querySelector('section.main') ||
+                parentDoc.body;
+            const plotly = window.parent.Plotly;
+            if (!target || !plotly) return;
+
+            const resizePlots = () => {
+                const plots = parentDoc.querySelectorAll('.js-plotly-plot');
+                plots.forEach((p) => {
+                    if (p && p.data) {
+                        plotly.Plots.resize(p);
+                    }
+                });
+            };
+
+            const ro = new ResizeObserver(resizePlots);
+            ro.observe(target);
+            window.parent.addEventListener('resize', resizePlots);
+            resizePlots();
+        })();
+        </script>
+    """
+    components.html(textwrap.dedent(html), height=0, width=0)

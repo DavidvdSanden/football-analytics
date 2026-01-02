@@ -3,7 +3,10 @@ import sys
 from football_analytics.visuals import shots
 import streamlit as st
 import pandas as pd
-from football_analytics.streamlit.components import match_header
+from football_analytics.streamlit.components import (
+    match_header,
+    enable_plotly_auto_resize,
+)
 from football_analytics.streamlit.data import (
     load_competitions,
     load_teams,
@@ -11,6 +14,7 @@ from football_analytics.streamlit.data import (
     load_shot_by_match,
 )
 from football_analytics.streamlit.xg import apply_xg_model_selection
+import json
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -21,6 +25,7 @@ if str(SRC_PATH) not in sys.path:
 
 st.set_page_config(page_title="Match Data", layout="wide")
 st.title("Match Details")
+enable_plotly_auto_resize()
 
 competitions = load_competitions()
 teams = load_teams()
@@ -82,7 +87,6 @@ selected_season_id = competitions.loc[
 ].unique()[0]
 st.session_state["selected_season_id"] = selected_season_id
 
-
 # --- Match ---
 comp_season_ids = competitions.loc[
     (competitions["competition_name"] == competition)
@@ -111,12 +115,11 @@ matches_with_names = matches_filtered.merge(
 )
 
 matches_with_names["match_label"] = (
-    matches_with_names["home_team_name"].fillna("Unknown")
+    matches_with_names["match_date"].fillna("Unknown date").astype(str)
+    + " – "
+    + matches_with_names["home_team_name"].fillna("Unknown")
     + " vs "
     + matches_with_names["away_team_name"].fillna("Unknown")
-    + " ("
-    + matches_with_names["match_date"].fillna("Unknown date").astype(str)
-    + ")"
 )
 
 matches_with_names = matches_with_names.sort_values(by="match_date", ascending=False)
@@ -143,6 +146,10 @@ match_id = matches_with_names.loc[
 st.session_state["selected_match_id"] = match_id
 
 selected_match_df = matches[matches["match_id"] == match_id]
+
+### -------------------
+### Match statistics
+### -------------------
 
 st.subheader("Match Statistics")
 home_team = teams[teams["team_id"] == selected_match_df["home_team_id"].values[0]][
@@ -178,6 +185,9 @@ fig = shots.plot_xg_progression(
 )
 st.plotly_chart(fig, use_container_width=True)
 
+### -------------------
+### Shot Overview
+### -------------------
 
 st.markdown(f"#### Shot Overview ({xg_label})")
 shot_overview_columns = [
@@ -192,6 +202,12 @@ shot_overview_columns = [
 ]
 if xg_column not in shot_overview_columns:
     shot_overview_columns.insert(5, xg_column)
+
+
+st.session_state.setdefault("shot_selected", None)
+pitch_height = 500
+pitch_margin = dict(l=0, r=0, t=0, b=0)
+
 fig = shots.plot_shot_overview(
     shot_data[shot_overview_columns].to_dict(orient="records"),
     show=False,
@@ -201,5 +217,33 @@ fig = shots.plot_shot_overview(
     away_team_id=selected_match_df["away_team_id"].values[0],
     pitch_theme="transparent",
     show_axis_labels=False,
+    pitch_padding=0,
+    layout_margin=pitch_margin,
+    fixed_size=False,
 )
-st.plotly_chart(fig, use_container_width=True)
+fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+
+event = st.plotly_chart(
+    fig,
+    use_container_width=True,
+    key="shot_overview",
+    on_select="rerun",
+    selection_mode=("points",),
+    config={"responsive": True},
+)
+selection = event.selection if event else None
+point_indices = selection.get("point_indices") if selection else None
+st.session_state.shot_selected = int(point_indices[0]) if point_indices else None
+
+
+shot_index = st.session_state.shot_selected
+if shot_index is not None and 0 <= shot_index < len(shot_data):
+    selected_shot_data = shot_data.iloc[shot_index]
+    fig = shots.plot_shot_details(
+        json.loads(selected_shot_data["full_json"]),
+        show=False,
+        show_axis_labels=False,
+        pitch_theme="transparent",
+    )
+    fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+    st.plotly_chart(fig, use_container_width=True)

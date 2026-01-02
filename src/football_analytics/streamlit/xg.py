@@ -166,10 +166,7 @@ def prepare_inhouse_features(shots_df: pd.DataFrame):
     if "is_with_feet" not in shots_df.columns or df["is_with_feet"].isna().any():
         if "body_part" in df.columns:
             df["is_with_feet"] = (
-                df["body_part"]
-                .fillna("")
-                .isin(("Right Foot", "Left Foot"))
-                .astype(int)
+                df["body_part"].fillna("").isin(("Right Foot", "Left Foot")).astype(int)
             )
         else:
             df["is_with_feet"] = 0
@@ -219,7 +216,7 @@ def infer_inhouse_xg(shots_df: pd.DataFrame, model_path: Path, scaler_path: Path
 
 def apply_xg_model_selection(shots_df: pd.DataFrame, model_dir: Path | None = None):
     st.sidebar.subheader("xG Model")
-    use_inhouse = st.sidebar.checkbox(
+    use_inhouse = st.sidebar.toggle(
         "Use in-house xG model", value=st.session_state.get("use_inhouse_xg", False)
     )
     st.session_state["use_inhouse_xg"] = use_inhouse
@@ -238,9 +235,7 @@ def apply_xg_model_selection(shots_df: pd.DataFrame, model_dir: Path | None = No
         label_index = labels.index(stored_label)
     else:
         label_index = 0
-    selected_label = st.sidebar.selectbox(
-        "In-house model", labels, index=label_index
-    )
+    selected_label = st.sidebar.selectbox("In-house model", labels, index=label_index)
     st.session_state["selected_inhouse_xg_label"] = selected_label
     selected = models[labels.index(selected_label)]
 
