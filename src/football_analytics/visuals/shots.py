@@ -13,7 +13,13 @@ def _get_pitch_theme_colors(pitch_theme):
     raise ValueError("pitch_theme must be one of: 'green', 'dark', 'transparent'")
 
 
-def create_pitch(pitch_theme="green", show_axis_labels=True):
+def create_pitch(
+    pitch_theme="green",
+    show_axis_labels=True,
+    x_range=None,
+    y_range=None,
+    lock_aspect=False,
+):
     """
     Returns a Plotly figure object with a football pitch drawn.
 
@@ -23,6 +29,10 @@ def create_pitch(pitch_theme="green", show_axis_labels=True):
         Color theme for the pitch background.
     show_axis_labels : bool
         If False, hide axis tick labels and ticks.
+    x_range, y_range : list[float] or None
+        Custom axis ranges for zooming, e.g. [20, 100]. If None, defaults are used.
+    lock_aspect : bool
+        If True, lock the aspect ratio so 1 unit in x equals 1 unit in y.
     """
     pitch_length = 120
     pitch_width = 80
@@ -200,22 +210,32 @@ def create_pitch(pitch_theme="green", show_axis_labels=True):
     )
 
     # Layout
+    default_x_range = [-5, pitch_length + 5]
+    default_y_range = [-5, pitch_width + 5]
+    xaxis_cfg = dict(
+        range=x_range or default_x_range,
+        showgrid=False,
+        zeroline=False,
+        showticklabels=show_axis_labels,
+        ticks="outside" if show_axis_labels else "",
+        fixedrange=False,
+    )
+    yaxis_cfg = dict(
+        range=y_range or default_y_range,
+        showgrid=False,
+        zeroline=False,
+        showticklabels=show_axis_labels,
+        ticks="outside" if show_axis_labels else "",
+        fixedrange=False,
+    )
+    if lock_aspect:
+        yaxis_cfg["scaleanchor"] = "x"
+        xaxis_cfg["constrain"] = "range"
+        yaxis_cfg["constrain"] = "range"
+
     fig.update_layout(
-        xaxis=dict(
-            range=[-5, pitch_length + 5],
-            showgrid=False,
-            zeroline=False,
-            showticklabels=show_axis_labels,
-            ticks="outside" if show_axis_labels else "",
-        ),
-        yaxis=dict(
-            range=[-5, pitch_width + 5],
-            showgrid=False,
-            zeroline=False,
-            scaleanchor="x",
-            showticklabels=show_axis_labels,
-            ticks="outside" if show_axis_labels else "",
-        ),
+        xaxis=xaxis_cfg,
+        yaxis=yaxis_cfg,
         width=1100,
         height=700,
         plot_bgcolor=pitch_color,
