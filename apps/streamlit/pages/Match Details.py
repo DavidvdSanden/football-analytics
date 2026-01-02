@@ -31,12 +31,31 @@ matches = load_matches()
 # -------------------
 st.sidebar.subheader("Match Selection")
 # --- Competition ---
+competition_options = sorted(competitions["competition_name"].dropna().unique())
+stored_competition_id = st.session_state.get("selected_competition_id")
+if stored_competition_id is not None:
+    stored_competition_name = competitions.loc[
+        competitions["competition_id"] == stored_competition_id, "competition_name"
+    ]
+    default_competition = (
+        stored_competition_name.iloc[0]
+        if not stored_competition_name.empty
+        else competition_options[0]
+    )
+else:
+    default_competition = competition_options[0]
+competition_index = (
+    competition_options.index(default_competition)
+    if default_competition in competition_options
+    else 0
+)
 competition = st.sidebar.selectbox(
-    "Competition", sorted(competitions["competition_name"].dropna().unique())
+    "Competition", competition_options, index=competition_index, key="competition"
 )
 selected_competition_id = competitions.loc[
     competitions["competition_name"] == competition, "competition_id"
 ].unique()[0]
+st.session_state["selected_competition_id"] = selected_competition_id
 
 # --- Season ---
 seasons = sorted(
@@ -44,12 +63,24 @@ seasons = sorted(
     .dropna()
     .unique()
 )
-season = st.sidebar.selectbox("Season", seasons)
+stored_season_id = st.session_state.get("selected_season_id")
+if stored_season_id is not None:
+    stored_season_name = competitions.loc[
+        competitions["season_id"] == stored_season_id, "season_name"
+    ]
+    default_season = (
+        stored_season_name.iloc[0] if not stored_season_name.empty else seasons[0]
+    )
+else:
+    default_season = seasons[0]
+season_index = seasons.index(default_season) if default_season in seasons else 0
+season = st.sidebar.selectbox("Season", seasons, index=season_index, key="season")
 selected_season_id = competitions.loc[
     (competitions["competition_name"] == competition)
     & (competitions["season_name"] == season),
     "season_id",
 ].unique()[0]
+st.session_state["selected_season_id"] = selected_season_id
 
 
 # --- Match ---
@@ -90,11 +121,26 @@ matches_with_names["match_label"] = (
 
 matches_with_names = matches_with_names.sort_values(by="match_date", ascending=False)
 
-match_label = st.sidebar.selectbox("Match", matches_with_names["match_label"].tolist())
+match_labels = matches_with_names["match_label"].tolist()
+stored_match_id = st.session_state.get("selected_match_id")
+if (
+    stored_match_id is not None
+    and stored_match_id in matches_with_names["match_id"].values
+):
+    stored_match_label = matches_with_names.loc[
+        matches_with_names["match_id"] == stored_match_id, "match_label"
+    ].iloc[0]
+    match_index = match_labels.index(stored_match_label)
+else:
+    match_index = 0
+match_label = st.sidebar.selectbox(
+    "Match", match_labels, index=match_index, key="match"
+)
 
 match_id = matches_with_names.loc[
     matches_with_names["match_label"] == match_label, "match_id"
 ].iloc[0]
+st.session_state["selected_match_id"] = match_id
 
 selected_match_df = matches[matches["match_id"] == match_id]
 

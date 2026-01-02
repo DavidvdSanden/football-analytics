@@ -219,7 +219,10 @@ def infer_inhouse_xg(shots_df: pd.DataFrame, model_path: Path, scaler_path: Path
 
 def apply_xg_model_selection(shots_df: pd.DataFrame, model_dir: Path | None = None):
     st.sidebar.subheader("xG Model")
-    use_inhouse = st.sidebar.checkbox("Use in-house xG model", value=False)
+    use_inhouse = st.sidebar.checkbox(
+        "Use in-house xG model", value=st.session_state.get("use_inhouse_xg", False)
+    )
+    st.session_state["use_inhouse_xg"] = use_inhouse
 
     if not use_inhouse:
         return shots_df, "statsbomb_xg", "StatsBomb xG"
@@ -230,7 +233,15 @@ def apply_xg_model_selection(shots_df: pd.DataFrame, model_dir: Path | None = No
         return shots_df, "statsbomb_xg", "StatsBomb xG"
 
     labels = [m["label"] for m in models]
-    selected_label = st.sidebar.selectbox("In-house model", labels, index=0)
+    stored_label = st.session_state.get("selected_inhouse_xg_label")
+    if stored_label in labels:
+        label_index = labels.index(stored_label)
+    else:
+        label_index = 0
+    selected_label = st.sidebar.selectbox(
+        "In-house model", labels, index=label_index
+    )
+    st.session_state["selected_inhouse_xg_label"] = selected_label
     selected = models[labels.index(selected_label)]
 
     try:
