@@ -16,10 +16,9 @@ Requirements:
 - Python 3.10+
 
 ```powershell
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -e .
-pip install -r requirements.txt
+git clone <repo>
+cd <repo>
+python bootstrap.py 
 ```
 
 ## Run the Streamlit app
