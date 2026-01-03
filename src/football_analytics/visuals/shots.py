@@ -273,6 +273,7 @@ def plot_shot_overview(
     pitch_padding=5,
     layout_margin=None,
     fixed_size=False,
+    height_figure=300,
 ):
     """
     Overview of all shots on the pitch.
@@ -343,13 +344,16 @@ def plot_shot_overview(
                 line=dict(color="#3F4646", width=1),
                 colorbar=dict(
                     title=dict(
-                        text="Expected<br>Goals (xG)",
+                        text="Expected<br>Goals (xG)<br><br>",
                         font=dict(size=10),
+                        side="right",
                     ),
                     len=0.6,
                     thickness=10,
                     y=0.5,
                     yanchor="middle",
+                    x=0.98,
+                    xanchor="right",
                     bgcolor="rgba(0,0,0,0)",
                     outlinewidth=0,
                 ),
@@ -359,9 +363,22 @@ def plot_shot_overview(
         )
     )
 
+    if away_on_left:
+        fig.add_annotation(
+            text="\u2190 Away \u2003\u2003Home \u2192",
+            xref="x",
+            yref="y",
+            x=60,
+            y=76,
+            showarrow=False,
+            font=dict(size=12),
+        )
+
     if show:
         fig.show()
         fig.update_layout(title="Overview of Shots")
+
+    fig.update_layout(height=height_figure)
 
     return fig
 
@@ -400,6 +417,8 @@ def plot_shot_heatmap(
         Color theme for the pitch background.
     show_axis_labels : bool
         If False, hide axis tick labels and ticks.
+    away_on_left : bool
+        If True, mirror away-team shots to the left half of the pitch.
     """
     if isinstance(shots, list):
         shots = pd.DataFrame(shots)
@@ -961,7 +980,17 @@ def plot_shot_conversion_heatmap(
 
 
 def plot_shot_details(
-    shot_data, show=True, pitch_theme="green", show_axis_labels=True, title=None
+    shot_data,
+    show=True,
+    pitch_theme="green",
+    show_axis_labels=True,
+    title=None,
+    fixed_size=False,
+    pitch_padding=5,
+    away_on_left=False,
+    home_team_id=None,
+    away_team_id=None,
+    height_figure=300,
 ):
     """
     Plots player positions at the moment of a shot and highlights the shooter.
@@ -977,6 +1006,8 @@ def plot_shot_details(
         Color theme for the pitch background.
     show_axis_labels : bool
         If False, hide axis tick labels and ticks.
+    pitch_padding : float
+        Padding (in pitch units) to add around the pitch.
     """
 
     # ----------------------------------------------------------
@@ -988,6 +1019,18 @@ def plot_shot_details(
     if not isinstance(shot, dict):
         shot = {}
     ff = shot.get("freeze_frame", [])
+    if not ff:
+        fig = create_pitch(
+            pitch_theme=pitch_theme,
+            show_axis_labels=show_axis_labels,
+            fixed_size=fixed_size,
+            padding=pitch_padding,
+        )
+        if title:
+            fig.update_layout(title)
+        if show:
+            fig.show()
+        return fig
     df = pd.DataFrame(ff)
 
     # Flatten nested columns
@@ -1020,7 +1063,26 @@ def plot_shot_details(
     marker_sizes = np.where(df["is_opposition_goalkeeper"], 14, 12).tolist()
     marker_line_widths = np.where(df["is_opposition_goalkeeper"], 3, 1).tolist()
 
-    fig = create_pitch(pitch_theme=pitch_theme, show_axis_labels=show_axis_labels)
+    shot_team_id = None
+    if away_on_left:
+        if home_team_id is None or away_team_id is None:
+            raise ValueError(
+                "home_team_id and away_team_id are required when away_on_left=True."
+            )
+        team = shot_data.get("team", {})
+        shot_team_id = team.get("id") if isinstance(team, dict) else None
+        if shot_team_id is None:
+            shot_team_id = shot_data.get("team_id")
+        if shot_team_id == away_team_id:
+            pitch_length = 120
+            df["x"] = pitch_length - df["x"]
+
+    fig = create_pitch(
+        pitch_theme=pitch_theme,
+        show_axis_labels=show_axis_labels,
+        fixed_size=fixed_size,
+        padding=pitch_padding,
+    )
 
     # -----------------------------
     # Freeze frame players
@@ -1048,6 +1110,9 @@ def plot_shot_details(
     # Shooter marker
     # -----------------------------
     shooter_x, shooter_y = shot_data["location"][:2]
+    if away_on_left and shot_team_id == away_team_id:
+        pitch_length = 120
+        shooter_x = pitch_length - shooter_x
     shooter_name = shot_data.get("player", [])
     shooter_name = shooter_name.get("name", "")
 
@@ -1073,6 +1138,8 @@ def plot_shot_details(
 
     if show:
         fig.show()
+
+    fig.update_layout(height=height_figure)
     return fig
 
 
@@ -1086,6 +1153,7 @@ def plot_xg_progression(
     outcome_col: str = "outcome",
     goal_value: str = "Goal",
     show: bool = True,
+    height_figure: int = 400,
 ):
     df = shots.copy()
 
@@ -1176,7 +1244,7 @@ def plot_xg_progression(
         yaxis_title="Cumulative xG",
         hovermode="x unified",
         template="plotly_white",
-        height=300,
+        height=height_figure,
         margin=dict(l=5, r=5, t=5, b=5),
     )
 

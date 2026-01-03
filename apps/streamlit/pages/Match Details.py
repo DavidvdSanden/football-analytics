@@ -205,7 +205,7 @@ if xg_column not in shot_overview_columns:
 
 
 st.session_state.setdefault("shot_selected", None)
-pitch_height = 500
+pitch_height = 440
 pitch_margin = dict(l=0, r=0, t=0, b=0)
 
 fig = shots.plot_shot_overview(
@@ -237,13 +237,37 @@ st.session_state.shot_selected = int(point_indices[0]) if point_indices else Non
 
 
 shot_index = st.session_state.shot_selected
-if shot_index is not None and 0 <= shot_index < len(shot_data):
+if shot_index is None:
+    # Creating empty dict to plot an empty pitch
+    empty_dict = {}
+    fig = shots.plot_shot_details(
+        empty_dict,
+        show=False,
+        show_axis_labels=False,
+        pitch_theme="transparent",
+        fixed_size=False,
+        pitch_padding=0,
+        away_on_left=True,
+        home_team_id=selected_match_df["home_team_id"].values[0],
+        away_team_id=selected_match_df["away_team_id"].values[0],
+    )
+    fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+elif shot_index is not None and 0 <= shot_index < len(shot_data):
     selected_shot_data = shot_data.iloc[shot_index]
     fig = shots.plot_shot_details(
         json.loads(selected_shot_data["full_json"]),
         show=False,
         show_axis_labels=False,
         pitch_theme="transparent",
+        fixed_size=False,
+        pitch_padding=0,
+        away_on_left=True,
+        home_team_id=selected_match_df["home_team_id"].values[0],
+        away_team_id=selected_match_df["away_team_id"].values[0],
     )
     fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
     st.plotly_chart(fig, use_container_width=True)
+else:
+    st.warning("Selected shot index is out of range.")
