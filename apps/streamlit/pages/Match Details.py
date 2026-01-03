@@ -11,6 +11,7 @@ from football_analytics.streamlit.data import (
     load_competitions,
     load_teams,
     load_matches,
+    load_players,
     load_shot_by_match,
 )
 from football_analytics.streamlit.xg import apply_xg_model_selection
@@ -168,6 +169,28 @@ match_header(
 )
 
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
+players = load_players()
+if not shot_data.empty and not players.empty:
+    shot_data = shot_data.copy()
+    players = players.copy()
+    shot_data["shot_taker_id"] = pd.to_numeric(
+        shot_data["shot_taker_id"], errors="coerce"
+    )
+    players["statsbomb_player_id"] = pd.to_numeric(
+        players["statsbomb_player_id"], errors="coerce"
+    )
+    player_columns = [
+        col
+        for col in players.columns
+        if col == "statsbomb_player_id" or col not in shot_data.columns
+    ]
+    shot_data = shot_data.merge(
+        players[player_columns],
+        left_on="shot_taker_id",
+        right_on="statsbomb_player_id",
+        how="left",
+    )
+
 
 shot_data, xg_column, xg_label = apply_xg_model_selection(
     shot_data, model_dir=PROJECT_ROOT / "xg_model" / "nn_models"

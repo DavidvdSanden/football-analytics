@@ -42,6 +42,17 @@ def load_matches():
 
 
 @st.cache_data(ttl=300)
+def load_players():
+    response = (
+        supabase.table("players")
+        .select("statsbomb_player_id, player_name, position_id, position_name")
+        .execute()
+    )
+    df = pd.DataFrame(response.data)
+    return df
+
+
+@st.cache_data(ttl=300)
 def load_shot_by_match(match_id: str):
     response = supabase.table("shots").select("*").eq("match_id", match_id).execute()
     return response.data

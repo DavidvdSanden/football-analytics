@@ -13,7 +13,7 @@ import joblib
 from football_analytics.data_processing.preprocessing import extract_shot_features
 
 
-INHOUSE_FEATURE_COLUMNS = [
+BASE_FEATURE_COLUMNS = [
     "distance_to_goal",
     "angle_to_goal_deg",
     "keeper_distance",
@@ -27,17 +27,31 @@ INHOUSE_FEATURE_COLUMNS = [
     "under_pressure",
 ]
 
+ROLE_FEATURE_COLUMNS = [
+    "is_defender",
+    "is_midfielder",
+    "is_forward",
+]
+
+_DEFENDER_POSITION_IDS = {1, 2, 3, 4, 5, 6, 7, 8}
+_MIDFIELDER_POSITION_IDS = {9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20}
+_FORWARD_POSITION_IDS = {21, 22, 23, 24, 25}
+
 _BOOL_FEATURE_COLUMNS = {
     "is_penalty",
     "keeper_is_in_shot_triangle",
     "is_with_feet",
     "under_pressure",
+    "is_defender",
+    "is_midfielder",
+    "is_forward",
 }
 
 
 class XGModel(torch.nn.Module):
     def __init__(self, input_dim: int):
         super().__init__()
+        self.input_dim = input_dim
         self.net = torch.nn.Sequential(
             torch.nn.Linear(input_dim, 64),
             torch.nn.ReLU(),
@@ -104,6 +118,7 @@ def list_inhouse_models(model_dir: Path | None = None):
         scaler_path = model_dir / f"scaler_{timestamp}.save"
         if not scaler_path.exists():
             continue
+        config_path = model_dir / f"config_{timestamp}.json"
         label = f"NN {timestamp}"
         models.append(
             {
@@ -111,6 +126,7 @@ def list_inhouse_models(model_dir: Path | None = None):
                 "timestamp": timestamp,
                 "model_path": model_path,
                 "scaler_path": scaler_path,
+                "config_path": config_path if config_path.exists() else None,
             }
         )
 
@@ -121,7 +137,7 @@ def _fill_missing_features_from_json(df: pd.DataFrame) -> pd.DataFrame:
     if "full_json" not in df.columns:
         return df
 
-    missing_mask = df[INHOUSE_FEATURE_COLUMNS].isna().any(axis=1)
+    missing_mask = df[BASE_FEATURE_COLUMNS].isna().any(axis=1)
     if not missing_mask.any():
         return df
 
@@ -134,7 +150,7 @@ def _fill_missing_features_from_json(df: pd.DataFrame) -> pd.DataFrame:
         except Exception:
             continue
 
-        for col in INHOUSE_FEATURE_COLUMNS:
+        for col in BASE_FEATURE_COLUMNS:
             if col in features and pd.isna(df.at[idx, col]):
                 df.at[idx, col] = features[col]
 
@@ -147,15 +163,37 @@ def _fill_missing_features_from_json(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def prepare_inhouse_features(shots_df: pd.DataFrame):
+def prepare_inhouse_features(
+    shots_df: pd.DataFrame, extra_feature_columns: list[str] | None = None
+):
     df = shots_df.copy()
     warnings = []
+    extra_feature_columns = extra_feature_columns or []
 
-    for col in INHOUSE_FEATURE_COLUMNS:
+    for col in BASE_FEATURE_COLUMNS:
         if col not in df.columns:
             df[col] = np.nan
 
     df = _fill_missing_features_from_json(df)
+
+    if "position_id" in df.columns:
+        role_cols_present = [col for col in ROLE_FEATURE_COLUMNS if col in df.columns]
+        role_cols_missing = [
+            col for col in ROLE_FEATURE_COLUMNS if col not in df.columns
+        ]
+        role_needs_fill = False
+        if role_cols_missing:
+            role_needs_fill = True
+            for col in role_cols_missing:
+                df[col] = np.nan
+        if role_cols_present:
+            role_needs_fill = (
+                role_needs_fill or df[ROLE_FEATURE_COLUMNS].isna().any(axis=1).any()
+            )
+        if role_needs_fill:
+            df["is_defender"] = df["position_id"].isin(_DEFENDER_POSITION_IDS)
+            df["is_midfielder"] = df["position_id"].isin(_MIDFIELDER_POSITION_IDS)
+            df["is_forward"] = df["position_id"].isin(_FORWARD_POSITION_IDS)
 
     if "is_penalty" not in shots_df.columns or df["is_penalty"].isna().any():
         if "shot_type" in df.columns:
@@ -176,33 +214,95 @@ def prepare_inhouse_features(shots_df: pd.DataFrame):
             df[col] = 0
         df[col] = _coerce_bool(df[col])
 
-    if df[INHOUSE_FEATURE_COLUMNS].isna().any().any():
+    for col in extra_feature_columns:
+        if col not in df.columns:
+            df[col] = 0
+        df[col] = _coerce_bool(df[col]).fillna(0)
+
+    if df[BASE_FEATURE_COLUMNS].isna().any().any():
         warnings.append("Missing in-house xG features were filled with 0.")
-        df[INHOUSE_FEATURE_COLUMNS] = df[INHOUSE_FEATURE_COLUMNS].fillna(0)
+        df[BASE_FEATURE_COLUMNS] = df[BASE_FEATURE_COLUMNS].fillna(0)
 
     return df, warnings
 
 
 @st.cache_resource(show_spinner=False)
 def _load_model_and_scaler(model_path: str, scaler_path: str):
-    model = XGModel(input_dim=len(INHOUSE_FEATURE_COLUMNS))
     state = torch.load(model_path, map_location="cpu")
+    input_dim = int(state["net.0.weight"].shape[1])
+    model = XGModel(input_dim=input_dim)
     model.load_state_dict(state)
     model.eval()
     scaler = joblib.load(scaler_path)
     return model, scaler
 
 
-def infer_inhouse_xg(shots_df: pd.DataFrame, model_path: Path, scaler_path: Path):
+def _resolve_feature_columns(
+    scaler, input_dim: int, config_path: Path | None = None
+) -> tuple[list[str], list[str]]:
+    warnings = []
+    combined = BASE_FEATURE_COLUMNS + ROLE_FEATURE_COLUMNS
+
+    if config_path and config_path.exists():
+        try:
+            payload = json.loads(config_path.read_text(encoding="utf-8"))
+            configured = payload.get("feature_columns")
+            if isinstance(configured, list) and configured:
+                return configured, warnings
+            warnings.append("Config feature list missing or invalid; using fallback.")
+        except (json.JSONDecodeError, OSError) as exc:
+            warnings.append(f"Config read failed ({exc}); using fallback.")
+
+    if hasattr(scaler, "feature_names_in_"):
+        feature_cols = list(scaler.feature_names_in_)
+        return feature_cols, warnings
+
+    expected_features = None
+    if hasattr(scaler, "n_features_in_"):
+        expected_features = int(scaler.n_features_in_)
+    elif input_dim:
+        expected_features = int(input_dim)
+
+    if expected_features == len(BASE_FEATURE_COLUMNS):
+        return BASE_FEATURE_COLUMNS, warnings
+    if expected_features == len(combined):
+        return combined, warnings
+    if expected_features is not None and expected_features <= len(combined):
+        warnings.append("Unexpected feature count; using the first available features.")
+        return combined[:expected_features], warnings
+
+    warnings.append("Unknown feature layout; falling back to base in-house features.")
+    return BASE_FEATURE_COLUMNS, warnings
+
+
+def infer_inhouse_xg(
+    shots_df: pd.DataFrame,
+    model_path: Path,
+    scaler_path: Path,
+    config_path: Path | None = None,
+):
     if shots_df.empty:
         df = shots_df.copy()
         df["inhouse_xg"] = np.array([], dtype=float)
         return df, []
 
-    df, warnings = prepare_inhouse_features(shots_df)
     model, scaler = _load_model_and_scaler(str(model_path), str(scaler_path))
+    feature_columns, layout_warnings = _resolve_feature_columns(
+        scaler, getattr(model, "input_dim", 0), config_path=config_path
+    )
+    df, warnings = prepare_inhouse_features(
+        shots_df, extra_feature_columns=ROLE_FEATURE_COLUMNS
+    )
+    warnings.extend(layout_warnings)
 
-    features = df[INHOUSE_FEATURE_COLUMNS].astype(float).to_numpy()
+    for col in feature_columns:
+        if col not in df.columns:
+            df[col] = 0
+    if df[feature_columns].isna().any().any():
+        warnings.append("Missing model features were filled with 0.")
+        df[feature_columns] = df[feature_columns].fillna(0)
+
+    features = df[feature_columns].astype(float).to_numpy()
     scaled = scaler.transform(features)
 
     with torch.no_grad():
@@ -241,7 +341,10 @@ def apply_xg_model_selection(shots_df: pd.DataFrame, model_dir: Path | None = No
 
     try:
         updated_df, warnings = infer_inhouse_xg(
-            shots_df, selected["model_path"], selected["scaler_path"]
+            shots_df,
+            selected["model_path"],
+            selected["scaler_path"],
+            config_path=selected.get("config_path"),
         )
     except Exception as exc:
         st.warning(f"In-house xG failed ({exc}). Falling back to StatsBomb xG.")
