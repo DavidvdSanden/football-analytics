@@ -203,10 +203,8 @@ if not shot_data.empty and not players.empty and not teams.empty:
     )
 
 shot_data, xg_column, xg_label = apply_xg_model_selection(
-    shot_data, model_dir=PROJECT_ROOT / "xg_model" / "nn_models"
+    shot_data, model_dir=PROJECT_ROOT / "models" / "xg_model" / "nn_models"
 )
-
-st.dataframe(shot_data)
 
 st.markdown(f"#### xG Progression ({xg_label})")
 fig = shots.plot_xg_progression(
