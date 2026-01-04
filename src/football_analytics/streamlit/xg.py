@@ -25,6 +25,7 @@ BASE_FEATURE_COLUMNS = [
     "keeper_is_in_shot_triangle",
     "is_with_feet",
     "under_pressure",
+    "is_male",
 ]
 
 ROLE_FEATURE_COLUMNS = [
@@ -45,6 +46,7 @@ _BOOL_FEATURE_COLUMNS = {
     "is_defender",
     "is_midfielder",
     "is_forward",
+    "is_male",
 }
 
 

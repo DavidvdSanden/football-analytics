@@ -170,7 +170,7 @@ match_header(
 
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
 players = load_players()
-if not shot_data.empty and not players.empty:
+if not shot_data.empty and not players.empty and not teams.empty:
     shot_data = shot_data.copy()
     players = players.copy()
     shot_data["shot_taker_id"] = pd.to_numeric(
@@ -191,10 +191,22 @@ if not shot_data.empty and not players.empty:
         how="left",
     )
 
+    teams["team_id"] = pd.to_numeric(teams["team_id"], errors="coerce")
+    shot_data = shot_data.merge(
+        teams[["team_id", "team_gender", "team_name"]],
+        left_on="attacking_team_id",
+        right_on="team_id",
+        how="left",
+    )
+    shot_data["is_male"] = shot_data["team_gender"].apply(
+        lambda x: 1 if x == "male" else 0
+    )
 
 shot_data, xg_column, xg_label = apply_xg_model_selection(
     shot_data, model_dir=PROJECT_ROOT / "xg_model" / "nn_models"
 )
+
+st.dataframe(shot_data)
 
 st.markdown(f"#### xG Progression ({xg_label})")
 fig = shots.plot_xg_progression(
@@ -222,6 +234,8 @@ shot_overview_columns = [
     "outcome",
     "shot_taker_id",
     "attacking_team_id",
+    "player_name",
+    "team_name",
 ]
 if xg_column not in shot_overview_columns:
     shot_overview_columns.insert(5, xg_column)

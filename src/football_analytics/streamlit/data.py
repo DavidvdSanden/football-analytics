@@ -23,7 +23,9 @@ def load_competitions():
 
 @st.cache_data(ttl=300)
 def load_teams():
-    response = supabase.table("teams").select("team_id, team_name").execute()
+    response = (
+        supabase.table("teams").select("team_id, team_name, team_gender").execute()
+    )
     df = pd.DataFrame(response.data)
     return df
 
