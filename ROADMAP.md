@@ -46,6 +46,12 @@ Develop skills in:
 - xT model
 - Player contribution metrics
 - Transfermarket scraping
+- Create model that compares value across / within matches and leagues
+
+**Milestone 3 – Team Characteristics**
+- Define playing style
+- Recommended strategy / style
+- Identify combinations
 
 <br>
 
