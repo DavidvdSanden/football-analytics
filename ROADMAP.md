@@ -39,13 +39,10 @@ Develop skills in:
 
 ## 🧩 Next Milestones
 
-**Milestone 1 – Visualization**
-- Add calculation of in-house xG model
-
-**Milestone 2 – Data Enrichment**
+**Milestone 1 – Data Enrichment**
 - Save all events (passes, dribbles, tackles, etc.) to DB for later usage in xT/xV model
 
-**Milestone 3 – Player Value**
+**Milestone 2 – Player Value**
 - xT model
 - Player contribution metrics
 - Transfermarket scraping
