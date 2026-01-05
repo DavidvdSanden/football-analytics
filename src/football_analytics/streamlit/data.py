@@ -1,6 +1,6 @@
 import pandas as pd
 import streamlit as st
-from football_analytics.utils import supabase
+from football_analytics.utils import database
 
 # -------------------
 ### Helper Functions ###
@@ -9,7 +9,7 @@ from football_analytics.utils import supabase
 
 @st.cache_data(ttl=300)
 def load_competitions():
-    rows = supabase.fetch_rows(
+    rows = database.fetch_rows(
         table_name="competitions",
         columns="competition_id, competition_name, season_name, season_id",
     )
@@ -19,7 +19,7 @@ def load_competitions():
 
 @st.cache_data(ttl=300)
 def load_teams():
-    rows = supabase.fetch_rows(
+    rows = database.fetch_rows(
         table_name="teams",
         columns="team_id, team_name, team_gender",
     )
@@ -29,7 +29,7 @@ def load_teams():
 
 @st.cache_data(ttl=300)
 def load_matches():
-    rows = supabase.fetch_rows(
+    rows = database.fetch_rows(
         table_name="matches",
         columns=(
             "match_id, home_team_id, away_team_id, home_score, away_score, "
@@ -42,7 +42,7 @@ def load_matches():
 
 @st.cache_data(ttl=300)
 def load_players():
-    rows = supabase.fetch_rows(
+    rows = database.fetch_rows(
         table_name="players",
         columns="statsbomb_player_id, player_name, position_id, position_name",
     )
@@ -52,7 +52,7 @@ def load_players():
 
 @st.cache_data(ttl=300)
 def load_shot_by_match(match_id: str):
-    return supabase.fetch_rows_by_column(
+    return database.fetch_rows_by_column(
         table_name="shots",
         column="match_id",
         value=match_id,

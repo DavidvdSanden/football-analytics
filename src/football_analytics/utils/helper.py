@@ -7,7 +7,7 @@ from .shot_geometry import (
     blocked_goal_fraction,
     keeper_in_shot_triangle,
 )
-from .supabase import (
+from .database import (
     get_supabase_client,
     fetch_all_rows_in_batches,
     fetch_rows,

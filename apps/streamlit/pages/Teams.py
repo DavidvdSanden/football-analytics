@@ -9,12 +9,12 @@ SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.append(str(SRC_PATH))
 
-from football_analytics.utils import supabase
+from football_analytics.utils import database
 
 
 @st.cache_data(show_spinner=True)
 def load_table(table_name: str, key_column: str, columns: str = "*") -> pd.DataFrame:
-    rows = supabase.fetch_all_rows_in_batches(
+    rows = database.fetch_all_rows_in_batches(
         table_name=table_name,
         key_column=key_column,
         columns=columns,
