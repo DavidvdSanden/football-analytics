@@ -1,9 +1,6 @@
-from supabase import create_client, Client
-import streamlit as st
 import pandas as pd
-
-
-supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
+import streamlit as st
+from football_analytics.utils import supabase
 
 # -------------------
 ### Helper Functions ###
@@ -12,49 +9,52 @@ supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_K
 
 @st.cache_data(ttl=300)
 def load_competitions():
-    response = (
-        supabase.table("competitions")
-        .select("competition_id, competition_name, season_name, season_id")
-        .execute()
+    rows = supabase.fetch_rows(
+        table_name="competitions",
+        columns="competition_id, competition_name, season_name, season_id",
     )
-    df = pd.DataFrame(response.data)
+    df = pd.DataFrame(rows)
     return df
 
 
 @st.cache_data(ttl=300)
 def load_teams():
-    response = (
-        supabase.table("teams").select("team_id, team_name, team_gender").execute()
+    rows = supabase.fetch_rows(
+        table_name="teams",
+        columns="team_id, team_name, team_gender",
     )
-    df = pd.DataFrame(response.data)
+    df = pd.DataFrame(rows)
     return df
 
 
 @st.cache_data(ttl=300)
 def load_matches():
-    response = (
-        supabase.table("matches")
-        .select(
-            "match_id, home_team_id, away_team_id, home_score, away_score, match_date, competition_id, season_id"
-        )
-        .execute()
+    rows = supabase.fetch_rows(
+        table_name="matches",
+        columns=(
+            "match_id, home_team_id, away_team_id, home_score, away_score, "
+            "match_date, competition_id, season_id"
+        ),
     )
-    df = pd.DataFrame(response.data)
+    df = pd.DataFrame(rows)
     return df
 
 
 @st.cache_data(ttl=300)
 def load_players():
-    response = (
-        supabase.table("players")
-        .select("statsbomb_player_id, player_name, position_id, position_name")
-        .execute()
+    rows = supabase.fetch_rows(
+        table_name="players",
+        columns="statsbomb_player_id, player_name, position_id, position_name",
     )
-    df = pd.DataFrame(response.data)
+    df = pd.DataFrame(rows)
     return df
 
 
 @st.cache_data(ttl=300)
 def load_shot_by_match(match_id: str):
-    response = supabase.table("shots").select("*").eq("match_id", match_id).execute()
-    return response.data
+    return supabase.fetch_rows_by_column(
+        table_name="shots",
+        column="match_id",
+        value=match_id,
+        columns="*",
+    )

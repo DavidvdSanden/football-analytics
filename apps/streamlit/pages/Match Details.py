@@ -173,6 +173,15 @@ players = load_players()
 if not shot_data.empty and not players.empty and not teams.empty:
     shot_data = shot_data.copy()
     players = players.copy()
+    shot_data["attacking_team_id"] = pd.to_numeric(
+        shot_data["attacking_team_id"], errors="coerce"
+    )
+    shot_data["minute"] = pd.to_numeric(shot_data["minute"], errors="coerce")
+    shot_data["second"] = pd.to_numeric(shot_data["second"], errors="coerce")
+    if "statsbomb_xg" in shot_data.columns:
+        shot_data["statsbomb_xg"] = pd.to_numeric(
+            shot_data["statsbomb_xg"], errors="coerce"
+        )
     shot_data["shot_taker_id"] = pd.to_numeric(
         shot_data["shot_taker_id"], errors="coerce"
     )
@@ -209,8 +218,8 @@ shot_data, xg_column, xg_label = apply_xg_model_selection(
 st.markdown(f"#### xG Progression ({xg_label})")
 fig = shots.plot_xg_progression(
     shots=shot_data,
-    home_team_id=selected_match_df["home_team_id"].values[0],
-    away_team_id=selected_match_df["away_team_id"].values[0],
+    home_team_id=int(selected_match_df["home_team_id"].values[0]),
+    away_team_id=int(selected_match_df["away_team_id"].values[0]),
     show=False,
     home_team_name=home_team,
     away_team_name=away_team,
@@ -248,8 +257,8 @@ fig = shots.plot_shot_overview(
     show=False,
     xg_column=xg_column,
     away_on_left=True,
-    home_team_id=selected_match_df["home_team_id"].values[0],
-    away_team_id=selected_match_df["away_team_id"].values[0],
+    home_team_id=int(selected_match_df["home_team_id"].values[0]),
+    away_team_id=int(selected_match_df["away_team_id"].values[0]),
     pitch_theme="transparent",
     show_axis_labels=False,
     pitch_padding=0,
@@ -283,24 +292,29 @@ if shot_index is None:
         fixed_size=False,
         pitch_padding=0,
         away_on_left=True,
-        home_team_id=selected_match_df["home_team_id"].values[0],
-        away_team_id=selected_match_df["away_team_id"].values[0],
+        home_team_id=int(selected_match_df["home_team_id"].values[0]),
+        away_team_id=int(selected_match_df["away_team_id"].values[0]),
     )
     fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
     st.plotly_chart(fig, use_container_width=True)
 
 elif shot_index is not None and 0 <= shot_index < len(shot_data):
     selected_shot_data = shot_data.iloc[shot_index]
+    raw_full_json = selected_shot_data["full_json"]
+    if isinstance(raw_full_json, (str, bytes, bytearray)):
+        shot_payload = json.loads(raw_full_json)
+    else:
+        shot_payload = raw_full_json
     fig = shots.plot_shot_details(
-        json.loads(selected_shot_data["full_json"]),
+        shot_payload,
         show=False,
         show_axis_labels=False,
         pitch_theme="transparent",
         fixed_size=False,
         pitch_padding=0,
         away_on_left=True,
-        home_team_id=selected_match_df["home_team_id"].values[0],
-        away_team_id=selected_match_df["away_team_id"].values[0],
+        home_team_id=int(selected_match_df["home_team_id"].values[0]),
+        away_team_id=int(selected_match_df["away_team_id"].values[0]),
     )
     fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
     st.plotly_chart(fig, use_container_width=True)

@@ -31,15 +31,13 @@ def display_shot_by_id(
     table_name: str = "shots",
     id_column: str = "shot_id",
 ) -> None:
-    supabase_client = supabase.get_supabase_client()
-    response = (
-        supabase_client.table(table_name)
-        .select("*")
-        .eq(id_column, shot_id)
-        .limit(1)
-        .execute()
+    data = supabase.fetch_rows_by_column(
+        table_name=table_name,
+        column=id_column,
+        value=shot_id,
+        columns="*",
+        limit=1,
     )
-    data = response.data or []
     if not data:
         st.warning(f"No shot found for {id_column}={shot_id}.")
         return

@@ -7,7 +7,14 @@ from .shot_geometry import (
     blocked_goal_fraction,
     keeper_in_shot_triangle,
 )
-from .supabase import get_supabase_client, fetch_all_rows_in_batches
+from .supabase import (
+    get_supabase_client,
+    fetch_all_rows_in_batches,
+    fetch_rows,
+    fetch_rows_by_column,
+    get_db_backend,
+    upsert_rows,
+)
 
 __all__ = [
     "parse_json_field",
@@ -19,4 +26,8 @@ __all__ = [
     "keeper_in_shot_triangle",
     "get_supabase_client",
     "fetch_all_rows_in_batches",
+    "fetch_rows",
+    "fetch_rows_by_column",
+    "get_db_backend",
+    "upsert_rows",
 ]
