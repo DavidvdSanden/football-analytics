@@ -319,7 +319,7 @@ def infer_inhouse_xg(
 def apply_xg_model_selection(shots_df: pd.DataFrame, model_dir: Path | None = None):
     st.sidebar.subheader("xG Model")
     use_inhouse = st.sidebar.toggle(
-        "Use in-house xG model", value=st.session_state.get("use_inhouse_xg", False)
+        "Use in-house xG model", value=st.session_state.get("use_inhouse_xg", True)
     )
     st.session_state["use_inhouse_xg"] = use_inhouse
 
@@ -355,4 +355,4 @@ def apply_xg_model_selection(shots_df: pd.DataFrame, model_dir: Path | None = No
     for message in warnings:
         st.warning(message)
 
-    return updated_df, "inhouse_xg", selected_label
+    return updated_df, "inhouse_xg", "In-house xG"
