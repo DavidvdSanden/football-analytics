@@ -191,7 +191,8 @@ if not shot_data.empty and not players.empty and not teams.empty:
     player_columns = [
         col
         for col in players.columns
-        if col == "statsbomb_player_id" or col not in shot_data.columns
+        if col == "statsbomb_player_id"
+        or (col not in shot_data.columns and col not in ("team_id", "team_name"))
     ]
     shot_data = shot_data.merge(
         players[player_columns],
@@ -248,12 +249,22 @@ if xg_column not in shot_overview_columns:
     shot_overview_columns.insert(5, xg_column)
 
 
+available_shot_columns = [
+    col for col in shot_overview_columns if col in shot_data.columns
+]
+if len(available_shot_columns) != len(shot_overview_columns):
+    missing = sorted(set(shot_overview_columns) - set(available_shot_columns))
+    if missing:
+        st.info(
+            "Some shot metadata is unavailable for the overview: " + ", ".join(missing)
+        )
+
 st.session_state.setdefault("shot_selected", None)
 pitch_height = 440
 pitch_margin = dict(l=0, r=0, t=0, b=0)
 
 fig = shots.plot_shot_overview(
-    shot_data[shot_overview_columns].to_dict(orient="records"),
+    shot_data[available_shot_columns].to_dict(orient="records"),
     show=False,
     xg_column=xg_column,
     away_on_left=True,

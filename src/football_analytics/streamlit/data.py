@@ -44,7 +44,10 @@ def load_matches():
 def load_players():
     rows = database.fetch_rows(
         table_name="players",
-        columns="statsbomb_player_id, player_name, position_id, position_name",
+        columns=(
+            "statsbomb_player_id, player_name, position_id, position_name, "
+            "team_id, team_name, jersey_number"
+        ),
     )
     df = pd.DataFrame(rows)
     return df
