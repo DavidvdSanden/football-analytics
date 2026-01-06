@@ -67,7 +67,7 @@ Develop skills in:
    - Regain possession (prevent xG from opponent + create own xG) -> can be on ground and via air
    - Prevent possession of opponent in more valuable xT
    - Create valuable option for other player to move possession to
-
+- Find data that has freeze_frames for all events (close to live tracking)
 
 <br>
 
