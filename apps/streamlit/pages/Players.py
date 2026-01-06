@@ -7,6 +7,7 @@ SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.append(str(SRC_PATH))
 
+st.set_page_config(page_title="Football Analysis", page_icon="⚽", layout="wide")
 st.title("Players")
 
 st.subheader("Search")

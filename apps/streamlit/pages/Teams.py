@@ -11,6 +11,8 @@ if str(SRC_PATH) not in sys.path:
 
 from football_analytics.utils import database
 
+st.set_page_config(page_title="Football Analysis", page_icon="⚽", layout="wide")
+
 
 @st.cache_data(show_spinner=True)
 def load_table(table_name: str, key_column: str, columns: str = "*") -> pd.DataFrame:

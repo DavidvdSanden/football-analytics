@@ -24,7 +24,7 @@ if str(SRC_PATH) not in sys.path:
     sys.path.append(str(SRC_PATH))
 
 
-st.set_page_config(page_title="Match Data", layout="wide")
+st.set_page_config(page_title="Football Analysis", page_icon="⚽", layout="wide")
 st.title("Match Details")
 enable_plotly_auto_resize()
 
