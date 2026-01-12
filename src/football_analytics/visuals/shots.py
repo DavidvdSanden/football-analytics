@@ -9,7 +9,7 @@ def _get_pitch_theme_colors(pitch_theme):
     if pitch_theme == "green":
         return "#6BBF59", "white", False
     if pitch_theme == "transparent":
-        return "rgba(0,0,0,0)", "white", True
+        return "rgba(0,0,0,0)", "#0B1C2D", True
     raise ValueError("pitch_theme must be one of: 'green', 'dark', 'transparent'")
 
 
@@ -344,16 +344,17 @@ def plot_shot_overview(
                 line=dict(color="#3F4646", width=1),
                 colorbar=dict(
                     title=dict(
-                        text="Expected<br>Goals (xG)<br><br>",
+                        text="Expected Goals (xG)",
                         font=dict(size=10),
-                        side="right",
+                        side="bottom",
                     ),
-                    len=0.6,
-                    thickness=10,
-                    y=0.5,
+                    orientation="h",
+                    len=0.7,
+                    thickness=12,
+                    y=0.07,
                     yanchor="middle",
-                    x=0.98,
-                    xanchor="right",
+                    x=0.5,
+                    xanchor="center",
                     bgcolor="rgba(0,0,0,0)",
                     outlinewidth=0,
                 ),
@@ -1083,6 +1084,17 @@ def plot_shot_details(
         fixed_size=fixed_size,
         padding=pitch_padding,
     )
+
+    if away_on_left:
+        fig.add_annotation(
+            text="\u2190 Away \u2003\u2003Home \u2192",
+            xref="x",
+            yref="y",
+            x=60,
+            y=76,
+            showarrow=False,
+            font=dict(size=12),
+        )
 
     # -----------------------------
     # Freeze frame players

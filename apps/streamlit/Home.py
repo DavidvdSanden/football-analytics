@@ -1,7 +1,22 @@
+from pathlib import Path
+
 import streamlit as st
 
-st.set_page_config(page_title="Football Analysis", page_icon="⚽", layout="wide")
-
+ICON_PATH = Path(__file__).resolve().parent / "icon_512.png"
+st.set_page_config(
+    page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
+)
+st.markdown(
+    """
+<style>
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 1rem;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 st.title("Football Analytics")
 st.write(
     "Welcome to the Streamlit dashboard. Use the pages in the sidebar to explore "

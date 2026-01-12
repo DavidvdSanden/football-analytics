@@ -16,9 +16,24 @@ from football_analytics.streamlit.data import (
     load_teams,
 )
 
-st.set_page_config(page_title="Football Analysis", page_icon="⚽", layout="wide")
+ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
+st.set_page_config(
+    page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
+)
+st.markdown(
+    """
+<style>
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 1rem;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 st.title("Players")
 
+st.markdown("### Player Search and Filter")
 players = load_players()
 if players.empty:
     st.warning("No player data available.")

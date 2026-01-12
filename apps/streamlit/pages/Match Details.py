@@ -19,12 +19,26 @@ import json
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
 SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.append(str(SRC_PATH))
 
 
-st.set_page_config(page_title="Football Analysis", page_icon="⚽", layout="wide")
+st.set_page_config(
+    page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
+)
+st.markdown(
+    """
+<style>
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 1rem;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 st.title("Match Details")
 enable_plotly_auto_resize()
 
@@ -260,8 +274,9 @@ if len(available_shot_columns) != len(shot_overview_columns):
         )
 
 st.session_state.setdefault("shot_selected", None)
-pitch_height = 440
-pitch_margin = dict(l=0, r=0, t=0, b=0)
+pitch_height = 520
+pitch_margin = dict(l=0, r=0, t=0, b=10)
+pitch_y_domain = [0.14, 1]
 
 fig = shots.plot_shot_overview(
     shot_data[available_shot_columns].to_dict(orient="records"),
@@ -277,57 +292,62 @@ fig = shots.plot_shot_overview(
     fixed_size=False,
 )
 fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+fig.update_yaxes(domain=pitch_y_domain)
 
-event = st.plotly_chart(
-    fig,
-    use_container_width=True,
-    key="shot_overview",
-    on_select="rerun",
-    selection_mode=("points",),
-    config={"responsive": True},
-)
-selection = event.selection if event else None
-point_indices = selection.get("point_indices") if selection else None
-st.session_state.shot_selected = int(point_indices[0]) if point_indices else None
-
+columns = st.columns(2)
+with columns[0]:
+    event = st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key="shot_overview",
+        on_select="rerun",
+        selection_mode=("points",),
+        config={"responsive": True},
+    )
+    selection = event.selection if event else None
+    point_indices = selection.get("point_indices") if selection else None
+    st.session_state.shot_selected = int(point_indices[0]) if point_indices else None
 
 shot_index = st.session_state.shot_selected
-if shot_index is None:
-    # Creating empty dict to plot an empty pitch
-    empty_dict = {}
-    fig = shots.plot_shot_details(
-        empty_dict,
-        show=False,
-        show_axis_labels=False,
-        pitch_theme="transparent",
-        fixed_size=False,
-        pitch_padding=0,
-        away_on_left=True,
-        home_team_id=int(selected_match_df["home_team_id"].values[0]),
-        away_team_id=int(selected_match_df["away_team_id"].values[0]),
-    )
-    fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
-    st.plotly_chart(fig, use_container_width=True)
+with columns[1]:
+    if shot_index is None:
+        # Creating empty dict to plot an empty pitch
+        empty_dict = {}
+        fig = shots.plot_shot_details(
+            empty_dict,
+            show=False,
+            show_axis_labels=False,
+            pitch_theme="transparent",
+            fixed_size=False,
+            pitch_padding=0,
+            away_on_left=True,
+            home_team_id=int(selected_match_df["home_team_id"].values[0]),
+            away_team_id=int(selected_match_df["away_team_id"].values[0]),
+        )
+        fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+        fig.update_yaxes(domain=pitch_y_domain)
+        st.plotly_chart(fig, use_container_width=True)
 
-elif shot_index is not None and 0 <= shot_index < len(shot_data):
-    selected_shot_data = shot_data.iloc[shot_index]
-    raw_full_json = selected_shot_data["full_json"]
-    if isinstance(raw_full_json, (str, bytes, bytearray)):
-        shot_payload = json.loads(raw_full_json)
+    elif shot_index is not None and 0 <= shot_index < len(shot_data):
+        selected_shot_data = shot_data.iloc[shot_index]
+        raw_full_json = selected_shot_data["full_json"]
+        if isinstance(raw_full_json, (str, bytes, bytearray)):
+            shot_payload = json.loads(raw_full_json)
+        else:
+            shot_payload = raw_full_json
+        fig = shots.plot_shot_details(
+            shot_payload,
+            show=False,
+            show_axis_labels=False,
+            pitch_theme="transparent",
+            fixed_size=False,
+            pitch_padding=0,
+            away_on_left=True,
+            home_team_id=int(selected_match_df["home_team_id"].values[0]),
+            away_team_id=int(selected_match_df["away_team_id"].values[0]),
+        )
+        fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+        fig.update_yaxes(domain=pitch_y_domain)
+        st.plotly_chart(fig, use_container_width=True)
     else:
-        shot_payload = raw_full_json
-    fig = shots.plot_shot_details(
-        shot_payload,
-        show=False,
-        show_axis_labels=False,
-        pitch_theme="transparent",
-        fixed_size=False,
-        pitch_padding=0,
-        away_on_left=True,
-        home_team_id=int(selected_match_df["home_team_id"].values[0]),
-        away_team_id=int(selected_match_df["away_team_id"].values[0]),
-    )
-    fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.warning("Selected shot index is out of range.")
+        st.warning("Selected shot index is out of range.")

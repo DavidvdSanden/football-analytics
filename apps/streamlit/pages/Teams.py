@@ -11,7 +11,10 @@ if str(SRC_PATH) not in sys.path:
 
 from football_analytics.utils import database
 
-st.set_page_config(page_title="Football Analysis", page_icon="⚽", layout="wide")
+ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
+st.set_page_config(
+    page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
+)
 
 
 @st.cache_data(show_spinner=True)
@@ -24,6 +27,17 @@ def load_table(table_name: str, key_column: str, columns: str = "*") -> pd.DataF
     return pd.DataFrame(rows)
 
 
+st.markdown(
+    """
+<style>
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 1rem;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 st.title("Club List")
 st.write("Loads the clubs table and shows unique club names.")
 
