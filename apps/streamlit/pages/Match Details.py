@@ -35,6 +35,32 @@ st.markdown(
     padding-top: 1.5rem;
     padding-bottom: 1rem;
 }
+h1 {
+    margin-bottom: 0.4rem;
+}
+h2 {
+    margin-top: 0.4rem;
+}
+h3 {
+    margin-top: 0.2rem;
+}
+.section-title {
+    margin-top: 0.1rem;
+    margin-bottom: 0.5rem;
+}
+.card {
+    border: 1px solid rgba(100,100,100,0.15);
+    border-radius: 12px;
+    padding: 1rem;
+    background: rgba(200,200,200,0.02);
+    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+}
+.stat-card {
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -166,21 +192,46 @@ selected_match_df = matches[matches["match_id"] == match_id]
 ### Match statistics
 ### -------------------
 
-st.subheader("Match Statistics")
-home_team = teams[teams["team_id"] == selected_match_df["home_team_id"].values[0]][
-    "team_name"
-].values[0]
-away_team = teams[teams["team_id"] == selected_match_df["away_team_id"].values[0]][
-    "team_name"
-].values[0]
-
-st.markdown("#### Scoreline")
-match_header(
-    home_team,
-    away_team,
-    int(selected_match_df["home_score"].values),
-    int(selected_match_df["away_score"].values),
-)
+st.markdown('<h3 class="section-title">Match Statistics</h3>', unsafe_allow_html=True)
+col1, col2, col3 = st.columns(3)
+with col1:
+    home_team = teams[teams["team_id"] == selected_match_df["home_team_id"].values[0]][
+        "team_name"
+    ].values[0]
+    away_team = teams[teams["team_id"] == selected_match_df["away_team_id"].values[0]][
+        "team_name"
+    ].values[0]
+    match_header_html = match_header(
+        home_team,
+        away_team,
+        int(selected_match_df["home_score"].values),
+        int(selected_match_df["away_score"].values),
+        render=False,
+    )
+    st.markdown(
+        f'<div class="card stat-card">{match_header_html}</div>',
+        unsafe_allow_html=True,
+    )
+with col2:
+    st.markdown(
+        """
+        <div class="card stat-card">
+            <div style="font-weight: 600; margin-bottom: 0.25rem;">Placeholder</div>
+            <div style="opacity: 0.7;">Add team or match metrics here.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with col3:
+    st.markdown(
+        """
+        <div class="card stat-card">
+            <div style="font-weight: 600; margin-bottom: 0.25rem;">Placeholder</div>
+            <div style="opacity: 0.7;">Add player or xG summary here.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
 players = load_players()
@@ -230,6 +281,8 @@ shot_data, xg_column, xg_label = apply_xg_model_selection(
     shot_data, model_dir=PROJECT_ROOT / "models" / "xg_model" / "nn_models"
 )
 
+st.markdown("---")
+
 st.markdown(f"#### xG Progression ({xg_label})")
 fig = shots.plot_xg_progression(
     shots=shot_data,
@@ -239,8 +292,10 @@ fig = shots.plot_xg_progression(
     home_team_name=home_team,
     away_team_name=away_team,
     xg_col=xg_column,
+    height_figure=250,
 )
-st.plotly_chart(fig, use_container_width=True)
+fig.update_layout(dragmode="zoom")
+st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 ### -------------------
 ### Shot Overview
@@ -276,7 +331,7 @@ if len(available_shot_columns) != len(shot_overview_columns):
 st.session_state.setdefault("shot_selected", None)
 pitch_height = 520
 pitch_margin = dict(l=0, r=0, t=0, b=10)
-pitch_y_domain = [0.14, 1]
+pitch_y_domain = [0.05, 1]
 
 fig = shots.plot_shot_overview(
     shot_data[available_shot_columns].to_dict(orient="records"),
@@ -291,7 +346,13 @@ fig = shots.plot_shot_overview(
     layout_margin=pitch_margin,
     fixed_size=False,
 )
-fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+fig.update_layout(
+    height=pitch_height,
+    margin=pitch_margin,
+    autosize=True,
+    margin_autoexpand=False,
+)
+fig.update_layout(dragmode="zoom")
 fig.update_yaxes(domain=pitch_y_domain)
 
 columns = st.columns(2)
@@ -302,7 +363,7 @@ with columns[0]:
         key="shot_overview",
         on_select="rerun",
         selection_mode=("points",),
-        config={"responsive": True},
+        config={"responsive": True, "displayModeBar": False},
     )
     selection = event.selection if event else None
     point_indices = selection.get("point_indices") if selection else None
@@ -324,9 +385,15 @@ with columns[1]:
             home_team_id=int(selected_match_df["home_team_id"].values[0]),
             away_team_id=int(selected_match_df["away_team_id"].values[0]),
         )
-        fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+        fig.update_layout(
+            height=pitch_height,
+            margin=pitch_margin,
+            autosize=True,
+            margin_autoexpand=False,
+        )
+        fig.update_layout(dragmode="zoom")
         fig.update_yaxes(domain=pitch_y_domain)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     elif shot_index is not None and 0 <= shot_index < len(shot_data):
         selected_shot_data = shot_data.iloc[shot_index]
@@ -346,8 +413,16 @@ with columns[1]:
             home_team_id=int(selected_match_df["home_team_id"].values[0]),
             away_team_id=int(selected_match_df["away_team_id"].values[0]),
         )
-        fig.update_layout(height=pitch_height, margin=pitch_margin, autosize=True)
+        fig.update_layout(
+            height=pitch_height,
+            margin=pitch_margin,
+            autosize=True,
+            margin_autoexpand=False,
+        )
+        fig.update_layout(dragmode="zoom")
         fig.update_yaxes(domain=pitch_y_domain)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     else:
         st.warning("Selected shot index is out of range.")
+
+st.markdown("---")

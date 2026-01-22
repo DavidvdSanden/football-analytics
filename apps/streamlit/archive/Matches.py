@@ -52,7 +52,10 @@ def display_shot_by_id(
         return
 
     fig = shots.plot_shot_details(shot_payload, show=False)
-    st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(dragmode="zoom")
+    st.plotly_chart(
+        fig, use_container_width=True, config={"displayModeBar": False}
+    )
 
 
 st.subheader("Shot Visual")

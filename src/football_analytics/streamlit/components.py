@@ -3,7 +3,7 @@ import streamlit.components.v1 as components
 import textwrap
 
 
-def match_header(home_team, away_team, home_goals, away_goals):
+def match_header(home_team, away_team, home_goals, away_goals, render=True):
     html = f"""
         <div style="width:100%; text-align:center;">
             <!-- Team names -->
@@ -11,7 +11,7 @@ def match_header(home_team, away_team, home_goals, away_goals):
                 display: grid;
                 grid-template-columns: 1fr auto 1fr;
                 align-items: center;
-                font-size: 22px;
+                font-size: 16px;
                 font-weight: 600;
                 margin-bottom: 0.25rem;
             ">
@@ -34,7 +34,10 @@ def match_header(home_team, away_team, home_goals, away_goals):
             </div>
         </div>
         """
-    st.markdown(textwrap.dedent(html), unsafe_allow_html=True)
+    html = textwrap.dedent(html)
+    if render:
+        st.markdown(html, unsafe_allow_html=True)
+    return html
 
 
 def enable_plotly_auto_resize():
