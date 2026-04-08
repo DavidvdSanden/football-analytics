@@ -3,7 +3,7 @@
 End-to-end football analytics workspace: data ingestion and processing, xG modeling,
 and Streamlit dashboards for match and shot analysis.
 
-![App Overview](app_overview.PNG)
+![App Overview](app_overview.gif)
 
 ## Highlights
 
