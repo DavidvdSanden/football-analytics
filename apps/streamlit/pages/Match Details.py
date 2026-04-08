@@ -4,7 +4,6 @@ from football_analytics.visuals import shots
 import streamlit as st
 import pandas as pd
 from football_analytics.streamlit.components import (
-    match_header,
     enable_plotly_auto_resize,
 )
 from football_analytics.streamlit.data import (
@@ -56,10 +55,92 @@ h3 {
     box-shadow: 0 1px 6px rgba(0,0,0,0.08);
 }
 .stat-card {
-    min-height: 180px;
+    min-height: 220px;
+    height: 220px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+.stat-title {
+    font-size: 1.02rem;
+    font-weight: 700;
+    margin-bottom: 0.55rem;
+    line-height: 1.2;
+}
+.stat-primary {
+    font-size: 1.45rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 0.25rem;
+}
+.score-card {
+    justify-content: flex-start;
+    align-items: stretch;
+    text-align: left;
+}
+.score-body {
+    flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    align-items: center;
+}
+.scoreline-big {
+    font-size: 4.2rem;
+    font-weight: 800;
+    line-height: 0.95;
+    margin: 0;
+    text-align: center;
+    width: 100%;
+}
+.score-sub {
+    text-align: center;
+    margin-top: 0.35rem;
+}
+.stat-secondary {
+    font-size: 0.9rem;
+    opacity: 0.85;
+}
+.stat-table-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+.stat-grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+.stat-grid th,
+.stat-grid td {
+    padding: 0.2rem 0.35rem;
+    text-align: center;
+    border-bottom: 1px solid rgba(100, 100, 100, 0.12);
+}
+.stat-grid th {
+    font-size: 0.8rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+.stat-grid th:first-child,
+.stat-grid td:first-child {
+    text-align: left;
+}
+.stat-grid td:first-child {
+    font-weight: 400;
+}
+.stat-grid tbody tr:first-child td {
+    font-size: 1rem;
+    font-weight: 400;
+}
+.match-info {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+    gap: 0.4rem 0.8rem;
+    font-size: 0.92rem;
+}
+.match-info div {
+    line-height: 1.25;
 }
 </style>
 """,
@@ -187,51 +268,17 @@ match_id = matches_with_names.loc[
 st.session_state["selected_match_id"] = match_id
 
 selected_match_df = matches[matches["match_id"] == match_id]
-
-### -------------------
-### Match statistics
-### -------------------
-
-st.markdown('<h3 class="section-title">Match Statistics</h3>', unsafe_allow_html=True)
-col1, col2, col3 = st.columns(3)
-with col1:
-    home_team = teams[teams["team_id"] == selected_match_df["home_team_id"].values[0]][
-        "team_name"
-    ].values[0]
-    away_team = teams[teams["team_id"] == selected_match_df["away_team_id"].values[0]][
-        "team_name"
-    ].values[0]
-    match_header_html = match_header(
-        home_team,
-        away_team,
-        int(selected_match_df["home_score"].values),
-        int(selected_match_df["away_score"].values),
-        render=False,
-    )
-    st.markdown(
-        f'<div class="card stat-card">{match_header_html}</div>',
-        unsafe_allow_html=True,
-    )
-with col2:
-    st.markdown(
-        """
-        <div class="card stat-card">
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">Placeholder</div>
-            <div style="opacity: 0.7;">Add team or match metrics here.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with col3:
-    st.markdown(
-        """
-        <div class="card stat-card">
-            <div style="font-weight: 600; margin-bottom: 0.25rem;">Placeholder</div>
-            <div style="opacity: 0.7;">Add player or xG summary here.</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+home_team_id = int(selected_match_df["home_team_id"].values[0])
+away_team_id = int(selected_match_df["away_team_id"].values[0])
+home_score = int(selected_match_df["home_score"].values[0])
+away_score = int(selected_match_df["away_score"].values[0])
+home_team = teams.loc[teams["team_id"] == home_team_id, "team_name"].values[0]
+away_team = teams.loc[teams["team_id"] == away_team_id, "team_name"].values[0]
+if "match_date" in selected_match_df.columns:
+    match_date_raw = selected_match_df["match_date"].iloc[0]
+    match_date = str(match_date_raw) if pd.notna(match_date_raw) else "Unknown"
+else:
+    match_date = "Unknown"
 
 shot_data = pd.DataFrame(load_shot_by_match(match_id))
 players = load_players()
@@ -281,13 +328,175 @@ shot_data, xg_column, xg_label = apply_xg_model_selection(
     shot_data, model_dir=PROJECT_ROOT / "models" / "xg_model" / "nn_models"
 )
 
+### -------------------
+### Match statistics
+### -------------------
+
+home_shots = shot_data[shot_data["attacking_team_id"] == home_team_id].copy()
+away_shots = shot_data[shot_data["attacking_team_id"] == away_team_id].copy()
+
+home_total_shots = len(home_shots)
+away_total_shots = len(away_shots)
+
+home_goals = (
+    home_shots["outcome"].astype(str).str.contains("goal", case=False, na=False).sum()
+    if "outcome" in home_shots.columns
+    else 0
+)
+away_goals = (
+    away_shots["outcome"].astype(str).str.contains("goal", case=False, na=False).sum()
+    if "outcome" in away_shots.columns
+    else 0
+)
+
+on_target_pattern = r"goal|saved"
+home_on_target = (
+    home_shots["outcome"]
+    .astype(str)
+    .str.contains(on_target_pattern, case=False, na=False, regex=True)
+    .sum()
+    if "outcome" in home_shots.columns
+    else 0
+)
+away_on_target = (
+    away_shots["outcome"]
+    .astype(str)
+    .str.contains(on_target_pattern, case=False, na=False, regex=True)
+    .sum()
+    if "outcome" in away_shots.columns
+    else 0
+)
+
+home_xg = (
+    float(home_shots[xg_column].fillna(0).sum())
+    if xg_column in home_shots.columns
+    else 0.0
+)
+away_xg = (
+    float(away_shots[xg_column].fillna(0).sum())
+    if xg_column in away_shots.columns
+    else 0.0
+)
+
+home_xg_per_shot = home_xg / home_total_shots if home_total_shots else 0.0
+away_xg_per_shot = away_xg / away_total_shots if away_total_shots else 0.0
+home_xg_delta = home_xg - away_xg
+away_xg_delta = away_xg - home_xg
+
+st.markdown("#### Match Info")
+st.markdown(
+    f"""
+    <div class="card" style="margin-bottom: 0.75rem;">
+        <div class="match-info">
+            <div><strong>Competition:</strong><br>{competition}</div>
+            <div><strong>Season:</strong><br>{season}</div>
+            <div><strong>Date:</strong><br>{match_date}</div>
+            <div><strong>Home Team:</strong><br>{home_team}</div>
+            <div><strong>Away Team:</strong><br>{away_team}</div>
+            <div><strong>Scoreline:</strong><br>{home_score} - {away_score}</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown('<h3 class="section-title">Match Statistics</h3>', unsafe_allow_html=True)
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.markdown(
+        f"""
+        <div class="card stat-card score-card">
+            <div class="stat-title">Scoreline</div>
+            <div class="score-body">
+                <div class="scoreline-big">{home_score} - {away_score}</div>
+                <div class="stat-secondary score-sub">{home_team} vs {away_team}</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with col2:
+    st.markdown(
+        f"""
+        <div class="card stat-card">
+            <div class="stat-title">Shooting Volume</div>
+            <div class="stat-table-wrap">
+                <table class="stat-grid">
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>{home_team}</th>
+                            <th>{away_team}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Shots</td>
+                            <td>{home_total_shots}</td>
+                            <td>{away_total_shots}</td>
+                        </tr>
+                        <tr>
+                            <td>On Target</td>
+                            <td>{home_on_target}</td>
+                            <td>{away_on_target}</td>
+                        </tr>
+                        <tr>
+                            <td>Goals (shots)</td>
+                            <td>{home_goals}</td>
+                            <td>{away_goals}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+with col3:
+    st.markdown(
+        f"""
+        <div class="card stat-card">
+            <div class="stat-title">xG Quality ({xg_label})</div>
+            <div class="stat-table-wrap">
+                <table class="stat-grid">
+                    <thead>
+                        <tr>
+                            <th>Metric</th>
+                            <th>{home_team}</th>
+                            <th>{away_team}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>xG</td>
+                            <td>{home_xg:.2f}</td>
+                            <td>{away_xg:.2f}</td>
+                        </tr>
+                        <tr>
+                            <td>xG per Shot</td>
+                            <td>{home_xg_per_shot:.3f}</td>
+                            <td>{away_xg_per_shot:.3f}</td>
+                        </tr>
+                        <tr>
+                            <td>xG Delta</td>
+                            <td>{home_xg_delta:+.2f}</td>
+                            <td>{away_xg_delta:+.2f}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 st.markdown("---")
 
 st.markdown(f"#### xG Progression ({xg_label})")
 fig = shots.plot_xg_progression(
     shots=shot_data,
-    home_team_id=int(selected_match_df["home_team_id"].values[0]),
-    away_team_id=int(selected_match_df["away_team_id"].values[0]),
+    home_team_id=home_team_id,
+    away_team_id=away_team_id,
     show=False,
     home_team_name=home_team,
     away_team_name=away_team,
@@ -338,8 +547,8 @@ fig = shots.plot_shot_overview(
     show=False,
     xg_column=xg_column,
     away_on_left=True,
-    home_team_id=int(selected_match_df["home_team_id"].values[0]),
-    away_team_id=int(selected_match_df["away_team_id"].values[0]),
+    home_team_id=home_team_id,
+    away_team_id=away_team_id,
     pitch_theme="transparent",
     show_axis_labels=False,
     pitch_padding=0,
@@ -382,8 +591,8 @@ with columns[1]:
             fixed_size=False,
             pitch_padding=0,
             away_on_left=True,
-            home_team_id=int(selected_match_df["home_team_id"].values[0]),
-            away_team_id=int(selected_match_df["away_team_id"].values[0]),
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
         )
         fig.update_layout(
             height=pitch_height,
@@ -410,8 +619,8 @@ with columns[1]:
             fixed_size=False,
             pitch_padding=0,
             away_on_left=True,
-            home_team_id=int(selected_match_df["home_team_id"].values[0]),
-            away_team_id=int(selected_match_df["away_team_id"].values[0]),
+            home_team_id=home_team_id,
+            away_team_id=away_team_id,
         )
         fig.update_layout(
             height=pitch_height,
