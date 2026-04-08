@@ -6,7 +6,7 @@ from supabase import create_client, Client
 
 def get_supabase_client() -> Client:
     """Create and return Supabase client from .env."""
-    load_dotenv()
+    load_dotenv(override=True)
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_KEY")
     return create_client(supabase_url, supabase_key)
@@ -14,7 +14,7 @@ def get_supabase_client() -> Client:
 
 def get_db_backend() -> str:
     """Return the active DB backend name."""
-    load_dotenv()
+    load_dotenv(override=True)
     return os.getenv("DB_BACKEND", "postgres").strip().lower()
 
 
@@ -27,7 +27,7 @@ def get_postgres_conn():
             "psycopg2 is required for Postgres backend. Install with: pip install psycopg2-binary"
         ) from exc
 
-    load_dotenv()
+    load_dotenv(override=True)
     host = os.getenv("POSTGRES_HOST", "localhost")
     port = int(os.getenv("POSTGRES_PORT", "5432"))
     dbname = os.getenv("POSTGRES_DB", "football_analysis")
@@ -246,9 +246,9 @@ def upsert_rows(
             if isinstance(conflict_columns, list)
             else conflict_columns
         )
-        response = supabase.table(table_name).upsert(
-            rows, on_conflict=conflict
-        ).execute()
+        response = (
+            supabase.table(table_name).upsert(rows, on_conflict=conflict).execute()
+        )
         return response.data
 
     try:
