@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-from football_analytics.utils.database import upsert_rows
+from football_analytics.utils.database import get_postgres_conn, upsert_rows
 from football_analytics.utils.db_schema import ensure_transfermarkt_tables
 
 
@@ -78,12 +78,24 @@ class TransfermarktConfig:
     fallback_start_urls: str = field(
         default_factory=lambda: os.getenv("TRANSFERMARKT_FALLBACK_START_URLS", "")
     )
+    enrich_profiles: bool = field(
+        default_factory=lambda: _env_bool("TRANSFERMARKT_ENRICH_PROFILES", True)
+    )
+    profile_enrich_limit: str = field(
+        default_factory=lambda: os.getenv("TRANSFERMARKT_PROFILE_ENRICH_LIMIT", "all")
+    )
 
     def max_pages_int(self) -> int | None:
         value = self.max_pages.strip().lower()
         if value == "all":
             return None
         return max(int(value), 1)
+
+    def profile_enrich_limit_int(self) -> int | None:
+        value = self.profile_enrich_limit.strip().lower()
+        if value == "all":
+            return None
+        return max(int(value), 0)
 
 
 class TransfermarktScraper:
@@ -310,11 +322,54 @@ class TransfermarktScraper:
     @staticmethod
     def _parse_changed_on(value: str) -> date | None:
         text = (value or "").strip()
-        for fmt in ("%b %d, %Y", "%b %d, %y", "%d/%m/%Y", "%Y-%m-%d"):
+        for fmt in ("%b %d, %Y", "%b %d, %y", "%d/%m/%Y", "%d.%m.%Y", "%Y-%m-%d"):
             try:
                 return datetime.strptime(text, fmt).date()
             except ValueError:
                 continue
+        return None
+
+    @staticmethod
+    def _normalize_text(value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = re.sub(r"\s+", " ", value).strip()
+        return text or None
+
+    @staticmethod
+    def _parse_height_cm(value: str | None) -> int | None:
+        text = (value or "").replace("m", "").replace("€", "").strip()
+        match = re.search(r"(\d)[,.](\d{2})", text)
+        if match:
+            return int(match.group(1)) * 100 + int(match.group(2))
+        return None
+
+    @staticmethod
+    def _extract_info_pairs(soup: BeautifulSoup) -> dict[str, str]:
+        values = []
+        for node in soup.select(".info-table .info-table__content"):
+            text = TransfermarktScraper._normalize_text(node.get_text(" ", strip=True))
+            if text:
+                values.append(text)
+
+        pairs: dict[str, str] = {}
+        for index in range(0, len(values) - 1, 2):
+            label = values[index].rstrip(":")
+            value = values[index + 1]
+            pairs[label] = value
+        return pairs
+
+    @staticmethod
+    def _extract_change_direction(cell) -> str | None:
+        icon = cell.select_one("span") if cell else None
+        classes = icon.get("class", []) if icon else []
+        class_blob = " ".join(classes)
+        if "green-arrow" in class_blob:
+            return "up"
+        if "red-arrow" in class_blob:
+            return "down"
+        if "grey" in class_blob or "gray" in class_blob:
+            return "unchanged"
         return None
 
     @staticmethod
@@ -381,6 +436,7 @@ class TransfermarktScraper:
             )
             player_name = player_anchor.get_text(strip=True) if player_anchor else None
             player_href = player_anchor.get("href") if player_anchor else None
+            player_image = cells[0].select_one("img")
             player_tm_id = self._extract_tm_id(player_href) or self._fallback_tm_id(
                 "player", player_name
             )
@@ -406,6 +462,7 @@ class TransfermarktScraper:
                 club_img = cells[3].select_one("img")
                 if club_img:
                     club_name = club_img.get("title")
+            club_img = cells[3].select_one("img")
             club_tm_id = self._extract_tm_id(club_href) or self._fallback_tm_id(
                 "club", club_name
             )
@@ -443,15 +500,18 @@ class TransfermarktScraper:
                     "age": age,
                     "club_tm_id": club_tm_id,
                     "club_name": club_name,
+                    "player_image_url": player_image.get("src") if player_image else None,
                     "player_profile_url": make_transfermarkt_full_url(player_href)
                     if player_href
                     else None,
+                    "club_badge_url": club_img.get("src") if club_img else None,
                     "club_profile_url": make_transfermarkt_full_url(club_href)
                     if club_href
                     else None,
                     "new_market_value_raw": new_mv_raw,
                     "old_market_value_raw": old_mv_raw,
                     "difference_raw": diff_raw,
+                    "change_direction": self._extract_change_direction(cells[4]),
                     "percentage_change": percentage_value,
                     "changed_on": self._parse_changed_on(changed_on_raw),
                 }
@@ -482,9 +542,186 @@ class TransfermarktScraper:
     def _table(self, table_name: str) -> str:
         return f"{self.config.db_schema}.{table_name}"
 
+    def _select_ids_missing_profile(
+        self,
+        table_name: str,
+        id_column: str,
+        ids: list[int],
+    ) -> set[int]:
+        if not ids:
+            return set()
+
+        conn = get_postgres_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    (
+                        f"SELECT {id_column} FROM {self._table(table_name)} "
+                        f"WHERE {id_column} = ANY(%s) AND profile_last_scraped_at IS NULL"
+                    ),
+                    (ids,),
+                )
+                return {int(row[0]) for row in cur.fetchall()}
+        finally:
+            conn.close()
+
+    def _enrich_player_profiles(self, players_to_enrich: list[dict[str, Any]]) -> int:
+        if not players_to_enrich:
+            return 0
+
+        updates: list[dict[str, Any]] = []
+        for player in players_to_enrich:
+            profile_url = player.get("player_profile_url")
+            player_id = self._to_int(player.get("player_tm_id"))
+            if player_id is None or not profile_url:
+                continue
+
+            response = self._request_with_retries(
+                profile_url,
+                1,
+                referer_url=self.config.base_url,
+            )
+            soup = BeautifulSoup(response.text, "lxml")
+            pairs = self._extract_info_pairs(soup)
+
+            citizenship = pairs.get("Citizenship") or pairs.get("Citizenship:")
+            updates.append(
+                {
+                    "tm_player_id": player_id,
+                    "full_name": player.get("player_name") or "Unknown Player",
+                    "home_name": pairs.get("Name in home country"),
+                    "date_of_birth": self._parse_changed_on(
+                        (pairs.get("Date of birth/Age") or "").split("(")[0].strip()
+                    ),
+                    "place_of_birth": pairs.get("Place of birth"),
+                    "height_cm": self._parse_height_cm(pairs.get("Height")),
+                    "nationality": player.get("nationality") or citizenship,
+                    "citizenship_raw": citizenship,
+                    "preferred_foot": pairs.get("Foot"),
+                    "main_position": player.get("position"),
+                    "detailed_position": pairs.get("Position"),
+                    "current_tm_club_id": str(player.get("club_tm_id"))
+                    if player.get("club_tm_id")
+                    else None,
+                    "joined_current_club_on": self._parse_changed_on(pairs.get("Joined")),
+                    "contract_expires_on": self._parse_changed_on(
+                        pairs.get("Contract expires")
+                    ),
+                    "last_contract_extension_on": self._parse_changed_on(
+                        pairs.get("Last contract extension")
+                    ),
+                    "player_image_url": player.get("player_image_url"),
+                    "profile_url": profile_url,
+                    "profile_last_scraped_at": datetime.utcnow().replace(microsecond=0),
+                    "scraped_at": datetime.utcnow().replace(microsecond=0),
+                    "updated_at": datetime.utcnow().replace(microsecond=0),
+                }
+            )
+
+        if updates:
+            upsert_rows(self._table("players"), updates, conflict_columns="tm_player_id")
+        return len(updates)
+
+    def _enrich_club_profiles(self, clubs_to_enrich: list[dict[str, Any]]) -> int:
+        if not clubs_to_enrich:
+            return 0
+
+        updates: list[dict[str, Any]] = []
+        for club in clubs_to_enrich:
+            profile_url = club.get("club_profile_url")
+            club_id = self._to_int(club.get("club_tm_id"))
+            if club_id is None or not profile_url:
+                continue
+
+            response = self._request_with_retries(
+                profile_url,
+                1,
+                referer_url=self.config.base_url,
+            )
+            soup = BeautifulSoup(response.text, "lxml")
+
+            official_name = self._normalize_text(
+                (soup.select_one("[itemprop='legalName']") or soup.select_one(".info-table .info-table__content--bold"))
+                .get_text(" ", strip=True)
+                if (soup.select_one("[itemprop='legalName']") or soup.select_one(".info-table .info-table__content--bold"))
+                else None
+            )
+            founded_on = self._parse_changed_on(
+                self._normalize_text(
+                    soup.select_one("[itemprop='foundingDate']").get_text(" ", strip=True)
+                    if soup.select_one("[itemprop='foundingDate']")
+                    else None
+                )
+            )
+            address_values = [
+                self._normalize_text(node.get_text(" ", strip=True))
+                for node in soup.select("[itemprop='address'] .info-table__content--bold")
+            ]
+            address_values = [value for value in address_values if value]
+            crest = soup.select_one(".dataBild img") or soup.select_one(".data-header__profile-container img")
+
+            updates.append(
+                {
+                    "tm_club_id": club_id,
+                    "club_name": club.get("club_name") or "Unknown Club",
+                    "country": address_values[-1] if address_values else club.get("country"),
+                    "official_name": official_name,
+                    "founded_on": founded_on,
+                    "address_raw": " | ".join(address_values) if address_values else None,
+                    "city": address_values[0] if address_values else None,
+                    "crest_url": club.get("club_badge_url") or (crest.get("src") if crest else None),
+                    "profile_url": profile_url,
+                    "profile_last_scraped_at": datetime.utcnow().replace(microsecond=0),
+                    "scraped_at": datetime.utcnow().replace(microsecond=0),
+                }
+            )
+
+        if updates:
+            upsert_rows(self._table("clubs"), updates, conflict_columns="tm_club_id")
+        return len(updates)
+
+    def _enrich_profiles_for_rows(self, parsed_rows: list[dict[str, Any]]) -> dict[str, int]:
+        if not self.config.enrich_profiles:
+            return {"player_profiles": 0, "club_profiles": 0}
+
+        limit = self.config.profile_enrich_limit_int()
+
+        unique_players: dict[int, dict[str, Any]] = {}
+        unique_clubs: dict[int, dict[str, Any]] = {}
+        for item in parsed_rows:
+            player_id = self._to_int(item.get("player_tm_id"))
+            club_id = self._to_int(item.get("club_tm_id"))
+            if player_id is not None and player_id not in unique_players:
+                unique_players[player_id] = item
+            if club_id is not None and club_id not in unique_clubs:
+                unique_clubs[club_id] = item
+
+        player_ids = list(unique_players.keys())
+        club_ids = list(unique_clubs.keys())
+        missing_player_ids = self._select_ids_missing_profile("players", "tm_player_id", player_ids)
+        missing_club_ids = self._select_ids_missing_profile("clubs", "tm_club_id", club_ids)
+
+        players_to_enrich = [unique_players[player_id] for player_id in player_ids if player_id in missing_player_ids]
+        clubs_to_enrich = [unique_clubs[club_id] for club_id in club_ids if club_id in missing_club_ids]
+
+        if limit is not None:
+            players_to_enrich = players_to_enrich[:limit]
+            clubs_to_enrich = clubs_to_enrich[:limit]
+
+        return {
+            "player_profiles": self._enrich_player_profiles(players_to_enrich),
+            "club_profiles": self._enrich_club_profiles(clubs_to_enrich),
+        }
+
     def _persist_rows(self, parsed_rows: list[dict[str, Any]]) -> dict[str, int]:
         if not parsed_rows:
-            return {"clubs": 0, "players": 0, "player_market_values": 0}
+            return {
+                "clubs": 0,
+                "players": 0,
+                "player_market_values": 0,
+                "player_profiles": 0,
+                "club_profiles": 0,
+            }
 
         clubs_map: dict[str, dict[str, Any]] = {}
         players_map: dict[str, dict[str, Any]] = {}
@@ -498,6 +735,7 @@ class TransfermarktScraper:
                 "tm_club_id": club_id,
                 "club_name": item["club_name"] or "Unknown Club",
                 "country": None,
+                "crest_url": item.get("club_badge_url"),
                 "profile_url": item.get("club_profile_url"),
                 "scraped_at": datetime.utcnow().replace(microsecond=0),
             }
@@ -509,6 +747,7 @@ class TransfermarktScraper:
                 "date_of_birth": None,
                 "preferred_foot": None,
                 "current_tm_club_id": str(club_id),
+                "player_image_url": item.get("player_image_url"),
                 "profile_url": item.get("player_profile_url"),
                 "scraped_at": datetime.utcnow().replace(microsecond=0),
                 "updated_at": datetime.utcnow().replace(microsecond=0),
@@ -536,6 +775,8 @@ class TransfermarktScraper:
                     "market_value_eur": self._parse_market_value_eur(
                         item["new_market_value_raw"]
                     ),
+                    "market_value_raw": item["new_market_value_raw"],
+                    "change_direction": item.get("change_direction"),
                     "source_url": self.config.base_url,
                     "scraped_at": scrape_date,
                 }
@@ -548,10 +789,14 @@ class TransfermarktScraper:
                 conflict_columns=["tm_player_id", "valuation_date"],
             )
 
+        enrichment_counts = self._enrich_profiles_for_rows(parsed_rows)
+
         return {
             "clubs": len(clubs),
             "players": len(players),
             "player_market_values": len(market_rows),
+            "player_profiles": enrichment_counts["player_profiles"],
+            "club_profiles": enrichment_counts["club_profiles"],
         }
 
     def scrape(self) -> dict[str, int]:
@@ -565,6 +810,8 @@ class TransfermarktScraper:
         total_inserted_clubs = 0
         total_inserted_players = 0
         total_inserted_market_values = 0
+        total_enriched_player_profiles = 0
+        total_enriched_club_profiles = 0
 
         while True:
             if max_pages is not None and page > max_pages:
@@ -597,6 +844,8 @@ class TransfermarktScraper:
                     total_inserted_clubs += result["clubs"]
                     total_inserted_players += result["players"]
                     total_inserted_market_values += result["player_market_values"]
+                    total_enriched_player_profiles += result["player_profiles"]
+                    total_enriched_club_profiles += result["club_profiles"]
 
             page += 1
             if not next_url:
@@ -609,6 +858,8 @@ class TransfermarktScraper:
             "clubs_upserted": total_inserted_clubs,
             "players_upserted": total_inserted_players,
             "player_market_values_upserted": total_inserted_market_values,
+            "player_profiles_enriched": total_enriched_player_profiles,
+            "club_profiles_enriched": total_enriched_club_profiles,
             "http_429_count": self._count_429,
             "selected_start_url": self._selected_start_url or self.config.base_url,
         }
