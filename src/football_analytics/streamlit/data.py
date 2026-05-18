@@ -61,3 +61,34 @@ def load_shot_by_match(match_id: str):
         value=match_id,
         columns="*",
     )
+
+
+@st.cache_data(ttl=300)
+def load_transfermarkt_players():
+    rows = database.fetch_rows(
+        table_name="transfermarkt.players",
+        columns=(
+            "tm_player_id, full_name, date_of_birth, nationality, preferred_foot, "
+            "main_position, detailed_position, current_tm_club_id, contract_expires_on, "
+            "player_image_url"
+        ),
+    )
+    return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=300)
+def load_transfermarkt_clubs():
+    rows = database.fetch_rows(
+        table_name="transfermarkt.clubs",
+        columns="tm_club_id, club_name, country",
+    )
+    return pd.DataFrame(rows)
+
+
+@st.cache_data(ttl=300)
+def load_transfermarkt_market_values():
+    rows = database.fetch_rows(
+        table_name="transfermarkt.player_market_values",
+        columns="tm_player_id, valuation_date, market_value_eur",
+    )
+    return pd.DataFrame(rows)
