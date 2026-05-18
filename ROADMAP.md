@@ -39,19 +39,18 @@ Develop skills in:
 
 ## 🧩 Next Milestones
 
-**Milestone 1 – Data Enrichment**
-- Save all events (passes, dribbles, tackles, etc.) to DB for later usage in xT/xV model
-
-**Milestone 2 – Player Value**
+**Milestone 1 – Player Value**
 - xT model
 - Player contribution metrics
-- Transfermarket scraping
 - Create model that compares value across / within matches and leagues
 
-**Milestone 3 – Team Characteristics**
+**Milestone 2 – Team Characteristics**
 - Define playing style
 - Recommended strategy / style
 - Identify combinations
+
+**Milestone 3 – Injury Prediction**
+- Injury prediction
 
 <br>
 
