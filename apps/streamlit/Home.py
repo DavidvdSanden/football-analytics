@@ -6,8 +6,11 @@ ICON_PATH = Path(__file__).resolve().parent / "icon_512.png"
 st.set_page_config(
     page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
 )
-st.markdown(
-    """
+
+
+def render_home() -> None:
+    st.markdown(
+        """
 <style>
 .block-container {
     padding-top: 1.5rem;
@@ -15,21 +18,70 @@ st.markdown(
 }
 </style>
 """,
-    unsafe_allow_html=True,
-)
-st.title("Football Analytics")
-st.write(
-    "Welcome to the Streamlit dashboard. Use the pages in the sidebar to explore "
-    "teams, clubs, matches, and other analytics."
-)
-
-st.subheader("Quick Links")
-col_a, col_b, col_c = st.columns(3)
-with col_a:
-    st.page_link("pages/Teams.py", label="Teams", icon=":material/groups:")
-with col_b:
-    st.page_link(
-        "pages/Match Details.py", label="Match Details", icon=":material/sports_soccer:"
+        unsafe_allow_html=True,
     )
-with col_c:
-    st.page_link("pages/Players.py", label="Players", icon=":material/person:")
+    st.title("Football Analytics")
+    st.write(
+        "Welcome to the Streamlit dashboard. Use the grouped sidebar navigation "
+        "to move between Statsbomb and Transfermarkt pages."
+    )
+    st.info(
+        "The app now uses Streamlit navigation sections so related pages appear under "
+        "separate headings in the sidebar."
+    )
+
+
+pages = {
+    "Home": [
+        st.Page(
+            render_home,
+            title="Home",
+            icon=":material/home:",
+            url_path="home",
+            default=True,
+        )
+    ],
+    "Statsbomb": [
+        st.Page(
+            "pages/Statsbomb/Teams.py",
+            title="Teams",
+            icon=":material/groups:",
+            url_path="statsbomb-teams",
+        ),
+        st.Page(
+            "pages/Statsbomb/Match Details.py",
+            title="Match Details",
+            icon=":material/sports_soccer:",
+            url_path="statsbomb-match-details",
+        ),
+        st.Page(
+            "pages/Statsbomb/Players.py",
+            title="Players",
+            icon=":material/person:",
+            url_path="statsbomb-players",
+        ),
+    ],
+    "Transfermarkt": [
+        st.Page(
+            "pages/Transfermarkt/Players.py",
+            title="Players",
+            icon=":material/person_search:",
+            url_path="transfermarkt-players",
+        ),
+        st.Page(
+            "pages/Transfermarkt/Transfers.py",
+            title="Transfers",
+            icon=":material/compare_arrows:",
+            url_path="transfermarkt-transfers",
+        ),
+        st.Page(
+            "pages/Transfermarkt/Values.py",
+            title="Values",
+            icon=":material/payments:",
+            url_path="transfermarkt-values",
+        ),
+    ],
+}
+
+navigation = st.navigation(pages, position="sidebar")
+navigation.run()

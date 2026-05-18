@@ -16,8 +16,7 @@ from football_analytics.streamlit.data import (
 from football_analytics.streamlit.xg import apply_xg_model_selection
 import json
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
 SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
