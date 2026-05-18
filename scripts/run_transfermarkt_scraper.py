@@ -11,7 +11,10 @@ from football_analytics.scrapers.transfermarkt import TransfermarktConfig, Trans
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Scrape Transfermarkt market value changes and upsert into PostgreSQL."
+        description=(
+            "Scrape Transfermarkt market value changes and latest transfers "
+            "and upsert into PostgreSQL."
+        )
     )
     parser.add_argument(
         "--max-pages",

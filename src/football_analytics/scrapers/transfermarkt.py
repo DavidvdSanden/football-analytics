@@ -84,6 +84,15 @@ class TransfermarktConfig:
     profile_enrich_limit: str = field(
         default_factory=lambda: os.getenv("TRANSFERMARKT_PROFILE_ENRICH_LIMIT", "all")
     )
+    latest_transfers_url: str = field(
+        default_factory=lambda: os.getenv(
+            "TRANSFERMARKT_LATEST_TRANSFERS_URL",
+            "https://www.transfermarkt.com/statistik/neuestetransfers",
+        )
+    )
+    latest_transfers_max_pages: str = field(
+        default_factory=lambda: os.getenv("TRANSFERMARKT_TRANSFERS_MAX_PAGES", "all")
+    )
 
     def max_pages_int(self) -> int | None:
         value = self.max_pages.strip().lower()
@@ -96,6 +105,12 @@ class TransfermarktConfig:
         if value == "all":
             return None
         return max(int(value), 0)
+
+    def latest_transfers_max_pages_int(self) -> int | None:
+        value = self.latest_transfers_max_pages.strip().lower()
+        if value == "all":
+            return None
+        return max(int(value), 1)
 
 
 class TransfermarktScraper:
@@ -377,6 +392,8 @@ class TransfermarktScraper:
         if not value:
             return None
         text = value.strip().replace("€", "").replace(",", ".").lower()
+        if "free" in text:
+            return 0
         text = text.replace("+", "").replace("-", "")
         multiplier = 1
         if text.endswith("bn"):
@@ -409,6 +426,49 @@ class TransfermarktScraper:
             return int(page_value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def _parse_transfer_date(value: str | None) -> date | None:
+        text = (value or "").strip()
+        for fmt in (
+            "%b %d, %Y",
+            "%b %d, %y",
+            "%d %b %Y",
+            "%d %b, %Y",
+            "%d.%m.%Y",
+            "%Y-%m-%d",
+        ):
+            try:
+                return datetime.strptime(text, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def _build_transfer_uid(*parts: Any) -> str:
+        text = "|".join(str(part or "") for part in parts)
+        return hashlib.sha1(text.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _extract_next_url(soup: BeautifulSoup, page: int) -> str | None:
+        next_link = soup.select_one("a.tm-pagination__link--icon-next") or soup.select_one(
+            "a[rel='next']"
+        )
+        if next_link and next_link.get("href"):
+            return make_transfermarkt_full_url(next_link.get("href"))
+
+        page_links: list[tuple[int, str]] = []
+        for anchor in soup.select(".tm-pagination a, div.tm-pagination a, ul.tm-pagination a"):
+            href = anchor.get("href")
+            page_num = TransfermarktScraper._extract_page_number(href)
+            if href and page_num is not None and page_num > page:
+                page_links.append((page_num, href))
+
+        if not page_links:
+            return None
+
+        next_href = min(page_links, key=lambda x: x[0])[1]
+        return make_transfermarkt_full_url(next_href)
 
     def _parse_page(self, html: str, page: int) -> tuple[list[dict[str, Any]], str | None]:
         soup = BeautifulSoup(html, "lxml")
@@ -517,27 +577,170 @@ class TransfermarktScraper:
                 }
             )
 
-        next_url = None
-
-        next_link = soup.select_one("a.tm-pagination__link--icon-next") or soup.select_one(
-            "a[rel='next']"
-        )
-        if next_link and next_link.get("href"):
-            next_url = make_transfermarkt_full_url(next_link.get("href"))
-        else:
-            # Fallback: parse numbered pagination links and select the smallest page > current.
-            page_links: list[tuple[int, str]] = []
-            for anchor in soup.select(".tm-pagination a, div.tm-pagination a, ul.tm-pagination a"):
-                href = anchor.get("href")
-                page_num = self._extract_page_number(href)
-                if href and page_num is not None and page_num > page:
-                    page_links.append((page_num, href))
-
-            if page_links:
-                next_href = min(page_links, key=lambda x: x[0])[1]
-                next_url = make_transfermarkt_full_url(next_href)
-
+        next_url = self._extract_next_url(soup, page)
         return rows, next_url
+
+    def _parse_latest_transfers_page(
+        self,
+        html: str,
+        page: int,
+        source_url: str,
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        soup = BeautifulSoup(html, "lxml")
+        table = (
+            soup.select_one("table.items")
+            or soup.select_one(".box table.items")
+            or soup.select_one("table[class*='items']")
+            or soup.select_one(".items")
+        )
+        if table is None:
+            self.logger.warning("No latest transfers table found on page %s", page)
+            title = soup.title.get_text(strip=True) if soup.title else "n/a"
+            self.logger.warning("Unexpected HTML title on latest transfers page %s: %s", page, title)
+            return [], None
+
+        headers = [
+            self._normalize_text(th.get_text(" ", strip=True) or "") or ""
+            for th in table.select("thead th")
+        ]
+        header_lookup = [header.lower() for header in headers]
+
+        def _find_col(keywords: tuple[str, ...], default_idx: int) -> int:
+            for idx, header in enumerate(header_lookup):
+                if any(keyword in header for keyword in keywords):
+                    return idx
+            return default_idx
+
+        idx_player = _find_col(("player",), 0)
+        idx_age = _find_col(("age",), 1)
+        idx_nationality = _find_col(("nat", "citizenship"), 2)
+        idx_from = _find_col(("left", "from", "old club"), 3)
+        idx_to = _find_col(("joined", "to", "new club"), 4)
+        idx_fee = _find_col(("fee",), 5)
+        idx_date = _find_col(("date", "day"), -1)
+        idx_market_value = _find_col(("market value", "mv"), -1)
+
+        rows: list[dict[str, Any]] = []
+        for row in table.select("tr.odd, tr.even"):
+            cells = row.find_all("td", recursive=False)
+            if len(cells) < 6:
+                continue
+
+            def _cell(index: int):
+                if index < 0 or index >= len(cells):
+                    return None
+                return cells[index]
+
+            player_cell = _cell(idx_player)
+            player_inline = player_cell.select_one("table.inline-table") if player_cell else None
+            player_anchor = (
+                player_inline.select_one("td.hauptlink a") if player_inline else None
+            )
+            if player_anchor is None and player_cell:
+                player_anchor = player_cell.select_one("a")
+            player_name = player_anchor.get_text(strip=True) if player_anchor else None
+            player_href = player_anchor.get("href") if player_anchor else None
+            player_image = player_cell.select_one("img") if player_cell else None
+            player_tm_id = self._extract_tm_id(player_href)
+
+            position = None
+            if player_inline:
+                trs = player_inline.select("tr")
+                if len(trs) > 1:
+                    position = trs[1].get_text(" ", strip=True)
+
+            nationality_cell = _cell(idx_nationality)
+            nationality = ", ".join(
+                img.get("title")
+                for img in nationality_cell.select("img")
+                if img.get("title")
+            ) if nationality_cell else None
+            if not nationality and nationality_cell:
+                nationality = self._normalize_text(nationality_cell.get_text(" ", strip=True))
+
+            age_cell = _cell(idx_age)
+            age = self._parse_age(age_cell.get_text(" ", strip=True)) if age_cell else None
+
+            from_cell = _cell(idx_from)
+            from_anchor = from_cell.select_one("a") if from_cell else None
+            from_club_name = None
+            from_club_href = None
+            if from_anchor:
+                from_club_name = from_anchor.get("title") or from_anchor.get_text(strip=True)
+                from_club_href = from_anchor.get("href")
+            if not from_club_name and from_cell:
+                from_img = from_cell.select_one("img")
+                if from_img:
+                    from_club_name = from_img.get("title")
+
+            to_cell = _cell(idx_to)
+            to_anchor = to_cell.select_one("a") if to_cell else None
+            to_club_name = None
+            to_club_href = None
+            if to_anchor:
+                to_club_name = to_anchor.get("title") or to_anchor.get_text(strip=True)
+                to_club_href = to_anchor.get("href")
+            if not to_club_name and to_cell:
+                to_img = to_cell.select_one("img")
+                if to_img:
+                    to_club_name = to_img.get("title")
+
+            fee_cell = _cell(idx_fee)
+            transfer_fee_raw = (
+                self._normalize_text(fee_cell.get_text(" ", strip=True)) if fee_cell else None
+            )
+            date_cell = _cell(idx_date)
+            transfer_date_raw = (
+                self._normalize_text(date_cell.get_text(" ", strip=True)) if date_cell else None
+            )
+
+            mv_cell = _cell(idx_market_value)
+            market_value_raw = (
+                self._normalize_text(mv_cell.get_text(" ", strip=True)) if mv_cell else None
+            )
+
+            row_uid = self._build_transfer_uid(
+                player_tm_id,
+                player_name,
+                from_club_name,
+                to_club_name,
+                transfer_fee_raw,
+                transfer_date_raw,
+            )
+
+            rows.append(
+                {
+                    "transfer_uid": row_uid,
+                    "tm_player_id": self._to_int(player_tm_id),
+                    "player_name": player_name or "Unknown Player",
+                    "player_profile_url": make_transfermarkt_full_url(player_href)
+                    if player_href
+                    else None,
+                    "player_image_url": player_image.get("src") if player_image else None,
+                    "age": age,
+                    "position": position,
+                    "nationality": nationality,
+                    "from_tm_club_id": self._to_int(self._extract_tm_id(from_club_href)),
+                    "from_club_name": from_club_name,
+                    "from_club_profile_url": make_transfermarkt_full_url(from_club_href)
+                    if from_club_href
+                    else None,
+                    "to_tm_club_id": self._to_int(self._extract_tm_id(to_club_href)),
+                    "to_club_name": to_club_name,
+                    "to_club_profile_url": make_transfermarkt_full_url(to_club_href)
+                    if to_club_href
+                    else None,
+                    "market_value_eur": self._parse_market_value_eur(market_value_raw),
+                    "market_value_raw": market_value_raw,
+                    "transfer_fee_eur": self._parse_market_value_eur(transfer_fee_raw),
+                    "transfer_fee_raw": transfer_fee_raw,
+                    "transfer_date": self._parse_transfer_date(transfer_date_raw),
+                    "source_url": source_url,
+                    "scraped_at": datetime.utcnow().replace(microsecond=0),
+                }
+            )
+
+        return rows, self._extract_next_url(soup, page)
 
     def _table(self, table_name: str) -> str:
         return f"{self.config.db_schema}.{table_name}"
@@ -799,6 +1002,65 @@ class TransfermarktScraper:
             "club_profiles": enrichment_counts["club_profiles"],
         }
 
+    def _persist_latest_transfers(self, transfer_rows: list[dict[str, Any]]) -> int:
+        if not transfer_rows:
+            return 0
+
+        upsert_rows(
+            self._table("latest_transfers"),
+            transfer_rows,
+            conflict_columns="transfer_uid",
+        )
+        return len(transfer_rows)
+
+    def _scrape_latest_transfers(self) -> dict[str, int]:
+        page = 1
+        max_pages = self.config.latest_transfers_max_pages_int()
+        current_url = self.config.latest_transfers_url
+        previous_response_url = self.config.referer_url
+        total_rows = 0
+        total_upserted = 0
+
+        while True:
+            if max_pages is not None and page > max_pages:
+                break
+
+            response = self._request_with_retries(
+                current_url,
+                page,
+                referer_url=previous_response_url,
+            )
+            parsed_rows, next_url = self._parse_latest_transfers_page(
+                response.text,
+                page,
+                source_url=response.url,
+            )
+            total_rows += len(parsed_rows)
+            self.logger.info("Latest transfers page %s parsed: %s rows", page, len(parsed_rows))
+            previous_response_url = response.url
+
+            if not parsed_rows:
+                break
+
+            if self.config.dry_run:
+                self.logger.info("Dry run enabled; skipping latest transfers upserts.")
+            else:
+                chunk_size = max(1, self.config.batch_size)
+                for i in range(0, len(parsed_rows), chunk_size):
+                    chunk = parsed_rows[i : i + chunk_size]
+                    total_upserted += self._persist_latest_transfers(chunk)
+
+            page += 1
+            if not next_url:
+                break
+            current_url = next_url
+
+        return {
+            "latest_transfers_pages_processed": page - 1,
+            "latest_transfers_rows_parsed": total_rows,
+            "latest_transfers_upserted": total_upserted,
+        }
+
     def scrape(self) -> dict[str, int]:
         ensure_transfermarkt_tables()
 
@@ -852,6 +1114,8 @@ class TransfermarktScraper:
                 break
             current_url = next_url
 
+        latest_transfers_summary = self._scrape_latest_transfers()
+
         return {
             "pages_processed": page - 1,
             "rows_parsed": total_rows,
@@ -862,6 +1126,7 @@ class TransfermarktScraper:
             "club_profiles_enriched": total_enriched_club_profiles,
             "http_429_count": self._count_429,
             "selected_start_url": self._selected_start_url or self.config.base_url,
+            **latest_transfers_summary,
         }
 
 
