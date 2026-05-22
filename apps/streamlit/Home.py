@@ -106,6 +106,12 @@ pages = {
     ],
     "Transfermarkt": [
         st.Page(
+            "pages/Transfermarkt/Database.py",
+            title="Database",
+            icon=":material/storage:",
+            url_path="transfermarkt-database",
+        ),
+        st.Page(
             "pages/Transfermarkt/Players.py",
             title="Players",
             icon=":material/person_search:",
