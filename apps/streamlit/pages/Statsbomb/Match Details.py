@@ -1,11 +1,40 @@
 from pathlib import Path
+import importlib
+import importlib.util
 import sys
+import json
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+SRC_PATH = PROJECT_ROOT / "src"
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+package_root = str(SRC_PATH / "football_analytics")
+loaded_pkg = sys.modules.get("football_analytics")
+if loaded_pkg is not None and hasattr(loaded_pkg, "__path__"):
+    pkg_paths = [str(p) for p in loaded_pkg.__path__]
+    if package_root not in pkg_paths:
+        loaded_pkg.__path__.append(package_root)
+importlib.invalidate_caches()
+
 from football_analytics.visuals import shots
 import streamlit as st
 import pandas as pd
 from football_analytics.streamlit.components import (
     enable_plotly_auto_resize,
 )
+try:
+    from football_analytics.streamlit.theme import page_header, section_heading
+except ModuleNotFoundError:
+    theme_path = SRC_PATH / "football_analytics" / "streamlit" / "theme.py"
+    spec = importlib.util.spec_from_file_location(
+        "football_analytics.streamlit.theme", theme_path
+    )
+    if spec is None or spec.loader is None:
+        raise
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    page_header = module.page_header
+    section_heading = module.section_heading
 from football_analytics.streamlit.data import (
     load_competitions,
     load_teams,
@@ -14,138 +43,17 @@ from football_analytics.streamlit.data import (
     load_shot_by_match,
 )
 from football_analytics.streamlit.xg import apply_xg_model_selection
-import json
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
 ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
-SRC_PATH = PROJECT_ROOT / "src"
-if str(SRC_PATH) not in sys.path:
-    sys.path.append(str(SRC_PATH))
 
 
 st.set_page_config(
     page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
 )
-st.markdown(
-    """
-<style>
-.block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 1rem;
-}
-h1 {
-    margin-bottom: 0.4rem;
-}
-h2 {
-    margin-top: 0.4rem;
-}
-h3 {
-    margin-top: 0.2rem;
-}
-.section-title {
-    margin-top: 0.1rem;
-    margin-bottom: 0.5rem;
-}
-.card {
-    border: 1px solid rgba(100,100,100,0.15);
-    border-radius: 12px;
-    padding: 1rem;
-    background: rgba(200,200,200,0.02);
-    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
-}
-.stat-card {
-    min-height: 220px;
-    height: 220px;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-}
-.stat-title {
-    font-size: 1.02rem;
-    font-weight: 700;
-    margin-bottom: 0.55rem;
-    line-height: 1.2;
-}
-.stat-primary {
-    font-size: 1.45rem;
-    font-weight: 800;
-    line-height: 1.1;
-    margin-bottom: 0.25rem;
-}
-.score-card {
-    justify-content: flex-start;
-    align-items: stretch;
-    text-align: left;
-}
-.score-body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-}
-.scoreline-big {
-    font-size: 4.2rem;
-    font-weight: 800;
-    line-height: 0.95;
-    margin: 0;
-    text-align: center;
-    width: 100%;
-}
-.score-sub {
-    text-align: center;
-    margin-top: 0.35rem;
-}
-.stat-secondary {
-    font-size: 0.9rem;
-    opacity: 0.85;
-}
-.stat-table-wrap {
-    flex: 1;
-    display: flex;
-    align-items: center;
-}
-.stat-grid {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.95rem;
-}
-.stat-grid th,
-.stat-grid td {
-    padding: 0.2rem 0.35rem;
-    text-align: center;
-    border-bottom: 1px solid rgba(100, 100, 100, 0.12);
-}
-.stat-grid th {
-    font-size: 0.8rem;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-}
-.stat-grid th:first-child,
-.stat-grid td:first-child {
-    text-align: left;
-}
-.stat-grid td:first-child {
-    font-weight: 400;
-}
-.stat-grid tbody tr:first-child td {
-    font-size: 1rem;
-    font-weight: 400;
-}
-.match-info {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(140px, 1fr));
-    gap: 0.4rem 0.8rem;
-    font-size: 0.92rem;
-}
-.match-info div {
-    line-height: 1.25;
-}
-</style>
-""",
-    unsafe_allow_html=True,
+page_header(
+    "Match Details",
+    "Shot maps, xG progression, and match statistics for a selected fixture.",
 )
-st.title("Match Details")
 enable_plotly_auto_resize()
 
 competitions = load_competitions()
@@ -382,10 +290,10 @@ away_xg_per_shot = away_xg / away_total_shots if away_total_shots else 0.0
 home_xg_delta = home_xg - away_xg
 away_xg_delta = away_xg - home_xg
 
-st.markdown("#### Match Info")
+section_heading("Match Info")
 st.markdown(
     f"""
-    <div class="card" style="margin-bottom: 0.75rem;">
+    <div class="card card-spaced">
         <div class="match-info">
             <div><strong>Competition:</strong><br>{competition}</div>
             <div><strong>Season:</strong><br>{season}</div>
@@ -399,8 +307,8 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown('<h3 class="section-title">Match Statistics</h3>', unsafe_allow_html=True)
-col1, col2, col3 = st.columns(3)
+section_heading("Match Statistics")
+col1, col2, col3 = st.columns(3, gap="medium")
 with col1:
     st.markdown(
         f"""
@@ -489,9 +397,7 @@ with col3:
         unsafe_allow_html=True,
     )
 
-st.markdown("---")
-
-st.markdown(f"#### xG Progression ({xg_label})")
+section_heading(f"xG Progression ({xg_label})")
 fig = shots.plot_xg_progression(
     shots=shot_data,
     home_team_id=home_team_id,
@@ -509,7 +415,7 @@ st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 ### Shot Overview
 ### -------------------
 
-st.markdown(f"#### Shot Overview ({xg_label})")
+section_heading(f"Shot Overview ({xg_label})")
 shot_overview_columns = [
     "statsbomb_event_id",
     "minute",
@@ -633,4 +539,3 @@ with columns[1]:
     else:
         st.warning("Selected shot index is out of range.")
 
-st.markdown("---")

@@ -1,6 +1,12 @@
 [theme]
-primaryColor = "#E30613"                 # PSV red
-backgroundColor = "#FFFFFF"              # white
-secondaryBackgroundColor = "#F2F2F2"      # light grey
-textColor = "#0B1C2D"                     # dark navy
+primaryColor = "#E30613"
+backgroundColor = "#FAFBFC"
+secondaryBackgroundColor = "#F2F4F7"
+textColor = "#0B1C2D"
 font = "sans serif"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"

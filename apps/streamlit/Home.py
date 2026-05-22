@@ -1,6 +1,35 @@
 from pathlib import Path
+import importlib
+import importlib.util
+import sys
 
 import streamlit as st
+
+# Ensure src/ is importable no matter where Streamlit is launched from.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SRC_PATH = PROJECT_ROOT / "src"
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+
+try:
+    from football_analytics.streamlit.theme import inject_app_styles
+except ModuleNotFoundError:
+    package_root = str(SRC_PATH / "football_analytics")
+    loaded_pkg = sys.modules.get("football_analytics")
+    if loaded_pkg is not None and hasattr(loaded_pkg, "__path__"):
+        pkg_paths = [str(p) for p in loaded_pkg.__path__]
+        if package_root not in pkg_paths:
+            loaded_pkg.__path__.append(package_root)
+    importlib.invalidate_caches()
+    theme_path = SRC_PATH / "football_analytics" / "streamlit" / "theme.py"
+    spec = importlib.util.spec_from_file_location(
+        "football_analytics.streamlit.theme", theme_path
+    )
+    if spec is None or spec.loader is None:
+        raise
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    inject_app_styles = module.inject_app_styles
 
 ICON_PATH = Path(__file__).resolve().parent / "icon_512.png"
 st.set_page_config(
@@ -9,25 +38,39 @@ st.set_page_config(
 
 
 def render_home() -> None:
+    inject_app_styles()
     st.markdown(
-        """
-<style>
-.block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 1rem;
-}
-</style>
-""",
+        f"""
+        <h1 class="page-title">Football Analytics</h1>
+        <p class="page-caption">
+            Explore match intelligence from StatsBomb and market data from Transfermarkt
+            in one dashboard. Use the sidebar to switch sections.
+        </p>
+        <div class="hero-panel">
+            <h2>Getting started</h2>
+            <p>
+                Pick a data source below, then use the filters on each page to narrow
+                competitions, seasons, clubs, or players. Match Details includes shot maps,
+                xG progression, and live model selection.
+            </p>
+        </div>
+        <div class="nav-tile-grid">
+            <div class="nav-tile">
+                <div class="nav-tile-title">StatsBomb</div>
+                <p class="nav-tile-desc">
+                    Teams, player search, and per-match shot analytics with custom xG models.
+                </p>
+            </div>
+            <div class="nav-tile">
+                <div class="nav-tile-title">Transfermarkt</div>
+                <p class="nav-tile-desc">
+                    Player profiles, market values, and transfer views (values and transfers
+                    pages are being expanded).
+                </p>
+            </div>
+        </div>
+        """,
         unsafe_allow_html=True,
-    )
-    st.title("Football Analytics")
-    st.write(
-        "Welcome to the Streamlit dashboard. Use the grouped sidebar navigation "
-        "to move between Statsbomb and Transfermarkt pages."
-    )
-    st.info(
-        "The app now uses Streamlit navigation sections so related pages appear under "
-        "separate headings in the sidebar."
     )
 
 

@@ -1,4 +1,6 @@
 from pathlib import Path
+import importlib
+import importlib.util
 import sys
 from html import escape
 
@@ -8,21 +10,44 @@ import streamlit as st
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
-    sys.path.append(str(SRC_PATH))
+    sys.path.insert(0, str(SRC_PATH))
+package_root = str(SRC_PATH / "football_analytics")
+loaded_pkg = sys.modules.get("football_analytics")
+if loaded_pkg is not None and hasattr(loaded_pkg, "__path__"):
+    pkg_paths = [str(p) for p in loaded_pkg.__path__]
+    if package_root not in pkg_paths:
+        loaded_pkg.__path__.append(package_root)
+importlib.invalidate_caches()
 
 from football_analytics.streamlit.data import (
     load_transfermarkt_clubs,
     load_transfermarkt_market_values,
     load_transfermarkt_players,
 )
+try:
+    from football_analytics.streamlit.theme import page_header, section_heading
+except ModuleNotFoundError:
+    theme_path = SRC_PATH / "football_analytics" / "streamlit" / "theme.py"
+    spec = importlib.util.spec_from_file_location(
+        "football_analytics.streamlit.theme", theme_path
+    )
+    if spec is None or spec.loader is None:
+        raise
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    page_header = module.page_header
+    section_heading = module.section_heading
 
 ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
 st.set_page_config(
     page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
 )
 
-st.title("Transfermarkt Players")
-st.markdown("### Player Search and Filter")
+page_header(
+    "Transfermarkt Players",
+    "Search players and view market value, club, and contract highlights.",
+)
+section_heading("Player Search and Filter")
 
 
 def format_market_value(value: object) -> str:
@@ -50,80 +75,7 @@ def render_selected_player_section(selected_df: pd.DataFrame) -> None:
             return fallback
         return escape(text)
 
-    st.markdown(
-        """
-        <style>
-        .player-card-section {
-            margin-bottom: 1.2rem;
-        }
-        .player-card {
-            border: 1px solid rgba(100,100,100,0.15);
-            border-radius: 16px;
-            padding: 1.1rem 1.2rem 1.1rem 1.2rem;
-            background: rgba(200,200,200,0.03);
-            box-shadow: 0 1px 6px rgba(0,0,0,0.08);
-            margin-bottom: 0.7rem;
-            min-height: 300px;
-        }
-        .player-card-title {
-            font-size: 1.15rem;
-            font-weight: 700;
-            margin-bottom: 0.7rem;
-        }
-        .player-card-metric {
-            font-size: 1.05rem;
-            font-weight: 600;
-            margin-bottom: 0.2rem;
-        }
-        .player-card-label {
-            font-size: 0.92rem;
-            color: #666;
-            margin-bottom: 0.1rem;
-        }
-        .player-metric-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(120px, 1fr));
-            gap: 0.75rem;
-        }
-        .player-metric-tile {
-            border: 1px solid rgba(100,100,100,0.12);
-            border-radius: 12px;
-            padding: 0.55rem 0.65rem;
-            background: rgba(255,255,255,0.02);
-            min-height: 68px;
-        }
-        .player-image-card {
-            border: 1px solid rgba(100,100,100,0.15);
-            border-radius: 16px;
-            padding: 0.18rem;
-            background: rgba(200,200,200,0.03);
-            box-shadow: 0 1px 6px rgba(0,0,0,0.08);
-            height: 300px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
-        .player-image {
-            max-height: 100%;
-            max-width: 100%;
-            height: auto;
-            width: auto;
-            object-fit: contain;
-            object-position: center center;
-            border-radius: 14px;
-        }
-        @media (max-width: 980px) {
-            .player-metric-grid {
-                grid-template-columns: repeat(2, minmax(120px, 1fr));
-            }
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    col_img, col_tiles = st.columns([0.9, 2.3])
+    col_img, col_tiles = st.columns([0.9, 2.3], gap="large")
     with col_img:
         image_url = selected_row.get("player_image_url")
         # Swap 'small' for 'medium' if present

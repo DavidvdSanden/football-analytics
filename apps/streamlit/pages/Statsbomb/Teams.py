@@ -1,4 +1,6 @@
 from pathlib import Path
+import importlib
+import importlib.util
 import sys
 
 import pandas as pd
@@ -7,8 +9,27 @@ import streamlit as st
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
-    sys.path.append(str(SRC_PATH))
+    sys.path.insert(0, str(SRC_PATH))
+package_root = str(SRC_PATH / "football_analytics")
+loaded_pkg = sys.modules.get("football_analytics")
+if loaded_pkg is not None and hasattr(loaded_pkg, "__path__"):
+    pkg_paths = [str(p) for p in loaded_pkg.__path__]
+    if package_root not in pkg_paths:
+        loaded_pkg.__path__.append(package_root)
+importlib.invalidate_caches()
 
+try:
+    from football_analytics.streamlit.theme import page_header
+except ModuleNotFoundError:
+    theme_path = SRC_PATH / "football_analytics" / "streamlit" / "theme.py"
+    spec = importlib.util.spec_from_file_location(
+        "football_analytics.streamlit.theme", theme_path
+    )
+    if spec is None or spec.loader is None:
+        raise
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    page_header = module.page_header
 from football_analytics.utils import database
 
 ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
@@ -27,19 +48,10 @@ def load_table(table_name: str, key_column: str, columns: str = "*") -> pd.DataF
     return pd.DataFrame(rows)
 
 
-st.markdown(
-    """
-<style>
-.block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 1rem;
-}
-</style>
-""",
-    unsafe_allow_html=True,
+page_header(
+    "Club List",
+    "Browse unique club names from the teams table in the database.",
 )
-st.title("Club List")
-st.write("Loads the clubs table and shows unique club names.")
 
 with st.sidebar:
     table_name = st.text_input("Table name", "teams")
