@@ -25,7 +25,11 @@ from football_analytics.streamlit.data import (
     load_transfermarkt_players,
 )
 try:
-    from football_analytics.streamlit.theme import page_header, section_heading
+    from football_analytics.streamlit.theme import (
+        inject_sidebar_navigation_brand,
+        page_header,
+        section_heading,
+    )
 except ModuleNotFoundError:
     theme_path = SRC_PATH / "football_analytics" / "streamlit" / "theme.py"
     spec = importlib.util.spec_from_file_location(
@@ -35,13 +39,15 @@ except ModuleNotFoundError:
         raise
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    inject_sidebar_navigation_brand = module.inject_sidebar_navigation_brand
     page_header = module.page_header
     section_heading = module.section_heading
 
-ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
+ICON_PATH = Path(__file__).resolve().parents[2] / "icon_512.png"
 st.set_page_config(
     page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
 )
+inject_sidebar_navigation_brand(ICON_PATH)
 
 page_header(
     "Transfermarkt Players",
@@ -236,18 +242,23 @@ with tab_search:
 with tab_filters:
     filtered = players.copy()
 
+    col_nationality, col_position, col_club = st.columns(3, gap="small")
+
     nationality_options = sorted(filtered["nationality"].dropna().astype(str).unique().tolist())
-    nationality = st.selectbox("Nationality", options=["All"] + nationality_options)
+    with col_nationality:
+        nationality = st.selectbox("Nationality", options=["All"] + nationality_options)
     if nationality != "All":
         filtered = filtered[filtered["nationality"] == nationality]
 
     position_options = sorted(filtered["main_position"].dropna().astype(str).unique().tolist())
-    position = st.selectbox("Position", options=["All"] + position_options)
+    with col_position:
+        position = st.selectbox("Position", options=["All"] + position_options)
     if position != "All":
         filtered = filtered[filtered["main_position"] == position]
 
     club_options = sorted(filtered["club_name"].dropna().astype(str).unique().tolist())
-    club = st.selectbox("Club", options=["All"] + club_options)
+    with col_club:
+        club = st.selectbox("Club", options=["All"] + club_options)
     if club != "All":
         filtered = filtered[filtered["club_name"] == club]
 

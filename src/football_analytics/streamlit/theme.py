@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from html import escape
+import base64
+from pathlib import Path
 
 import streamlit as st
 
@@ -50,15 +52,21 @@ def inject_app_styles(*, force: bool = False) -> None:
     background: linear-gradient(180deg, var(--fa-page-bg) 0%, #F6F8FB 100%);
 }}
 .block-container {{
-    padding-top: 1.5rem;
+    padding-top: 0.85rem;
     padding-bottom: 2.4rem;
     max-width: 1180px;
+}}
+div[data-testid="stMainBlockContainer"] {{
+    padding-top: 0.15rem !important;
 }}
 
 /* Keep vertical spacing between sections predictable across pages */
 div[data-testid="stVerticalBlock"] > div {{
     margin-top: var(--fa-space-2);
     margin-bottom: var(--fa-space-2);
+}}
+.block-container > div[data-testid="stVerticalBlock"] > div:first-child {{
+    margin-top: 0;
 }}
 
 /* Header / toolbar */
@@ -84,12 +92,38 @@ section[data-testid="stSidebar"] [data-testid="stSidebarNav"] span {{
 section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {{
     padding-top: 0.5rem;
 }}
+.sidebar-brand {{
+    padding: 0.15rem 0.35rem 0.5rem;
+    margin: 0 0.2rem 0.45rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}}
+.sidebar-brand-logo {{
+    width: 64px;
+    height: 64px;
+    border-radius: 12px;
+    border: 1px solid var(--fa-border);
+    background: #ffffff;
+    object-fit: cover;
+    display: block;
+    margin-bottom: 0.28rem;
+}}
+.sidebar-brand-title {{
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--fa-navy);
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+    text-align: center;
+}}
 
 /* Typography */
 h1, .page-title {{
     font-weight: 700;
     letter-spacing: -0.025em;
     color: var(--fa-navy);
+    margin-top: 0;
     margin-bottom: 0.35rem;
 }}
 h2, h3 {{
@@ -114,6 +148,13 @@ h3 {{
     line-height: 1.5;
     margin: 0 0 1.35rem 0;
     max-width: 52rem;
+}}
+.page-header {{
+    margin-top: -3.0rem;
+    margin-bottom: -0.9rem;
+}}
+.page-header .page-caption {{
+    margin-bottom: 1.1rem;
 }}
 .section-title {{
     margin-top: 0.35rem;
@@ -142,15 +183,39 @@ div[data-testid="stTextInput"],
 div[data-testid="stNumberInput"],
 div[data-testid="stDateInput"],
 div[data-testid="stSlider"] {{
-    margin-bottom: var(--fa-space-2);
+    margin-bottom: 0.2rem;
+}}
+div[data-testid="stWidgetLabel"] {{
+    margin-bottom: 0.1rem;
+}}
+div[data-testid="stWidgetLabel"] p {{
+    font-size: 0.8rem;
+    margin-bottom: 0;
+}}
+div[data-baseweb="select"] > div,
+div[data-baseweb="input"] > div {{
+    min-height: 2.05rem;
+}}
+div[data-testid="stSlider"] {{
+    padding-top: 0.04rem;
+}}
+
+/* Compact sidebar filter stack */
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] > div {{
+    margin-top: 0.18rem;
+    margin-bottom: 0.18rem;
+}}
+section[data-testid="stSidebar"] h3 {{
+    margin-top: 0.14rem;
+    margin-bottom: 0.22rem;
 }}
 
 /* Tabs */
 div[data-baseweb="tab-list"] {{
     gap: 0.4rem;
     border-bottom: 1px solid var(--fa-border);
-    padding-bottom: 0.3rem;
-    margin-bottom: 0.9rem;
+    padding-bottom: 0.22rem;
+    margin-bottom: 0.35rem;
 }}
 button[data-baseweb="tab"] {{
     border: 1px solid transparent;
@@ -164,7 +229,7 @@ button[data-baseweb="tab"][aria-selected="true"] {{
     background: rgba(227, 6, 19, 0.08);
 }}
 div[data-baseweb="tab-panel"] {{
-    padding-top: 0.25rem;
+    padding-top: 0.04rem;
 }}
 
 /* Hero (home) */
@@ -438,12 +503,13 @@ div[data-testid="stDataFrame"] {{
 def page_header(title: str, subtitle: str | None = None) -> None:
     """Render a consistent page title and optional caption."""
     inject_app_styles()
-    st.markdown(f'<h1 class="page-title">{escape(title)}</h1>', unsafe_allow_html=True)
-    if subtitle:
-        st.markdown(
-            f'<p class="page-caption">{escape(subtitle)}</p>',
-            unsafe_allow_html=True,
-        )
+    subtitle_html = (
+        f'<p class="page-caption">{escape(subtitle)}</p>' if subtitle else ""
+    )
+    st.markdown(
+        f'<div class="page-header"><h1 class="page-title">{escape(title)}</h1>{subtitle_html}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def section_heading(title: str, *, level: int = 3) -> None:
@@ -452,5 +518,43 @@ def section_heading(title: str, *, level: int = 3) -> None:
     tag = f"h{min(max(level, 2), 4)}"
     st.markdown(
         f'<{tag} class="section-title">{escape(title)}</{tag}>',
+        unsafe_allow_html=True,
+    )
+
+
+def inject_sidebar_navigation_brand(
+    icon_path: str | Path,
+    *,
+    nav_padding_top: str = "2.0rem",
+    logo_top: str = "1.1rem",
+    logo_left: str = "0.55rem",
+    logo_size_px: int = 64,
+) -> None:
+    """Render the sidebar logo above navigation with consistent spacing."""
+    inject_app_styles()
+    encoded_icon = base64.b64encode(Path(icon_path).read_bytes()).decode("ascii")
+    st.markdown(
+        f"""
+        <style>
+        section[data-testid="stSidebar"] > div {{
+            position: relative;
+        }}
+        section[data-testid="stSidebar"] [data-testid="stSidebarNav"] {{
+            padding-top: {nav_padding_top};
+        }}
+        section[data-testid="stSidebar"] > div::before {{
+            content: "";
+            position: absolute;
+            top: {logo_top};
+            left: {logo_left};
+            width: {logo_size_px}px;
+            height: {logo_size_px}px;
+            border-radius: 12px;
+            border: 1px solid rgba(11, 28, 45, 0.12);
+            background: #ffffff url("data:image/png;base64,{encoded_icon}") center/cover no-repeat;
+            box-shadow: 0 1px 2px rgba(11, 28, 45, 0.06), 0 4px 14px rgba(11, 28, 45, 0.05);
+        }}
+        </style>
+        """,
         unsafe_allow_html=True,
     )

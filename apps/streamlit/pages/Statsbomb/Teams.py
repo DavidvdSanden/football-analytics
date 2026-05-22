@@ -19,7 +19,10 @@ if loaded_pkg is not None and hasattr(loaded_pkg, "__path__"):
 importlib.invalidate_caches()
 
 try:
-    from football_analytics.streamlit.theme import page_header
+    from football_analytics.streamlit.theme import (
+        inject_sidebar_navigation_brand,
+        page_header,
+    )
 except ModuleNotFoundError:
     theme_path = SRC_PATH / "football_analytics" / "streamlit" / "theme.py"
     spec = importlib.util.spec_from_file_location(
@@ -29,13 +32,15 @@ except ModuleNotFoundError:
         raise
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    inject_sidebar_navigation_brand = module.inject_sidebar_navigation_brand
     page_header = module.page_header
 from football_analytics.utils import database
 
-ICON_PATH = Path(__file__).resolve().parents[1] / "icon_512.png"
+ICON_PATH = Path(__file__).resolve().parents[2] / "icon_512.png"
 st.set_page_config(
     page_title="Football Analysis", page_icon=str(ICON_PATH), layout="wide"
 )
+inject_sidebar_navigation_brand(ICON_PATH)
 
 
 @st.cache_data(show_spinner=True)
