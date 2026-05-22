@@ -51,6 +51,7 @@ inject_sidebar_navigation_brand(ICON_PATH)
 page_header(
     "Players",
     "Search by name or filter by competition, season, and team.",
+    content_max_width_px=1320,
 )
 section_heading("Player Search and Filter")
 players = load_players()

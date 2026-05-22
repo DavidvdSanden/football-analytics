@@ -43,6 +43,7 @@ inject_sidebar_navigation_brand(ICON_PATH)
 page_header(
     "Transfermarkt Values",
     "Squad values, player valuations, and market trends.",
+    content_max_width_px=1320,
 )
 st.markdown(
     """

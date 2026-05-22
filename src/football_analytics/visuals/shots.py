@@ -274,6 +274,7 @@ def plot_shot_overview(
     layout_margin=None,
     fixed_size=False,
     height_figure=300,
+    show_colorbar=True,
 ):
     """
     Overview of all shots on the pitch.
@@ -340,18 +341,14 @@ def plot_shot_overview(
                 colorscale="Reds",
                 cmin=0,
                 cmax=1,
-                showscale=True,
+                showscale=show_colorbar,
                 line=dict(color="#3F4646", width=1),
                 colorbar=dict(
-                    title=dict(
-                        text="Expected Goals (xG)",
-                        font=dict(size=10),
-                        side="bottom",
-                    ),
+                    title=dict(text="xG", font=dict(size=9), side="bottom"),
                     orientation="h",
-                    len=0.7,
-                    thickness=8,
-                    y=0.025,
+                    len=0.52,
+                    thickness=6,
+                    y=0.012,
                     yanchor="middle",
                     x=0.5,
                     xanchor="center",

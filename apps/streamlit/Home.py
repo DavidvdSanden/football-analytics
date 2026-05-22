@@ -51,6 +51,7 @@ def render_home() -> None:
     page_header(
         "Football Analytics",
         "Explore match intelligence from StatsBomb and market data from Transfermarkt in one dashboard.",
+        margin_top="0.15rem",
     )
 
     st.markdown(

@@ -52,6 +52,7 @@ inject_sidebar_navigation_brand(ICON_PATH)
 page_header(
     "Transfermarkt Players",
     "Search players and view market value, club, and contract highlights.",
+    content_max_width_px=1320,
 )
 section_heading("Player Search and Filter")
 

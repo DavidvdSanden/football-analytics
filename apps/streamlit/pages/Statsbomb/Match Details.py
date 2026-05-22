@@ -12,9 +12,18 @@ package_root = str(SRC_PATH / "football_analytics")
 loaded_pkg = sys.modules.get("football_analytics")
 if loaded_pkg is not None and hasattr(loaded_pkg, "__path__"):
     pkg_paths = [str(p) for p in loaded_pkg.__path__]
-    if package_root not in pkg_paths:
-        loaded_pkg.__path__.append(package_root)
+    if package_root in pkg_paths:
+        loaded_pkg.__path__.remove(package_root)
+    loaded_pkg.__path__.insert(0, package_root)
 importlib.invalidate_caches()
+
+loaded_shots_module = sys.modules.get("football_analytics.visuals.shots")
+if loaded_shots_module is not None:
+    shots_module_file = getattr(loaded_shots_module, "__file__", "")
+    if shots_module_file and not Path(shots_module_file).resolve().is_relative_to(
+        SRC_PATH.resolve()
+    ):
+        sys.modules.pop("football_analytics.visuals.shots", None)
 
 from football_analytics.visuals import shots
 import streamlit as st
@@ -59,8 +68,8 @@ inject_sidebar_navigation_brand(ICON_PATH)
 page_header(
     "Match Details",
     "Shot maps, xG progression, and match statistics for a selected fixture.",
+    content_max_width_px=1320,
 )
-enable_plotly_auto_resize()
 
 competitions = load_competitions()
 teams = load_teams()
@@ -404,6 +413,7 @@ with col3:
     )
 
 section_heading(f"xG Progression ({xg_label})")
+enable_plotly_auto_resize()
 fig = shots.plot_xg_progression(
     shots=shot_data,
     home_team_id=home_team_id,
@@ -449,9 +459,9 @@ if len(available_shot_columns) != len(shot_overview_columns):
         )
 
 st.session_state.setdefault("shot_selected", None)
-pitch_height = 520
+overview_pitch_height = 495
+detail_pitch_height = 495
 pitch_margin = dict(l=0, r=0, t=0, b=10)
-pitch_y_domain = [0.05, 1]
 
 fig = shots.plot_shot_overview(
     shot_data[available_shot_columns].to_dict(orient="records"),
@@ -465,15 +475,15 @@ fig = shots.plot_shot_overview(
     pitch_padding=0,
     layout_margin=pitch_margin,
     fixed_size=False,
+    show_colorbar=True,
 )
 fig.update_layout(
-    height=pitch_height,
+    height=overview_pitch_height,
     margin=pitch_margin,
     autosize=True,
     margin_autoexpand=False,
 )
 fig.update_layout(dragmode="zoom")
-fig.update_yaxes(domain=pitch_y_domain)
 
 columns = st.columns(2)
 with columns[0]:
@@ -506,13 +516,12 @@ with columns[1]:
             away_team_id=away_team_id,
         )
         fig.update_layout(
-            height=pitch_height,
+            height=detail_pitch_height,
             margin=pitch_margin,
             autosize=True,
             margin_autoexpand=False,
         )
         fig.update_layout(dragmode="zoom")
-        fig.update_yaxes(domain=pitch_y_domain)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     elif shot_index is not None and 0 <= shot_index < len(shot_data):
@@ -534,13 +543,12 @@ with columns[1]:
             away_team_id=away_team_id,
         )
         fig.update_layout(
-            height=pitch_height,
+            height=detail_pitch_height,
             margin=pitch_margin,
             autosize=True,
             margin_autoexpand=False,
         )
         fig.update_layout(dragmode="zoom")
-        fig.update_yaxes(domain=pitch_y_domain)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     else:
         st.warning("Selected shot index is out of range.")

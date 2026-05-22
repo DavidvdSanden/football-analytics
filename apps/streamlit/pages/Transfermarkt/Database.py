@@ -94,6 +94,7 @@ def _format_delta(delta: int) -> tuple[str, str, str]:
 page_header(
     "Transfermarkt Database",
     "Overview of core Transfermarkt tables and a snapshot of additions from the last 7 days.",
+    content_max_width_px=1320,
 )
 
 table_specs = [

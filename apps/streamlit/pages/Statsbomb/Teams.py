@@ -56,6 +56,7 @@ def load_table(table_name: str, key_column: str, columns: str = "*") -> pd.DataF
 page_header(
     "Club List",
     "Browse unique club names from the teams table in the database.",
+    content_max_width_px=1320,
 )
 
 with st.sidebar:

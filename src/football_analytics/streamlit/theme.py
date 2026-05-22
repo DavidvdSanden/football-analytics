@@ -19,7 +19,7 @@ BRAND_CARD_BG = "#FFFFFF"
 _APP_STYLES_INJECTED = False
 
 
-def inject_app_styles(*, force: bool = False) -> None:
+def inject_app_styles(*, force: bool = False, content_max_width_px: int = 1180) -> None:
     """Inject global CSS once per session (typography, layout, cards, sidebar)."""
     global _APP_STYLES_INJECTED
     if _APP_STYLES_INJECTED and not force:
@@ -54,7 +54,7 @@ def inject_app_styles(*, force: bool = False) -> None:
 .block-container {{
     padding-top: 0.85rem;
     padding-bottom: 2.4rem;
-    max-width: 1180px;
+    max-width: {content_max_width_px}px;
 }}
 div[data-testid="stMainBlockContainer"] {{
     padding-top: 0.15rem !important;
@@ -500,14 +500,21 @@ div[data-testid="stDataFrame"] {{
     )
 
 
-def page_header(title: str, subtitle: str | None = None) -> None:
+def page_header(
+    title: str,
+    subtitle: str | None = None,
+    *,
+    content_max_width_px: int = 1180,
+    margin_top: str = "-3.0rem",
+    margin_bottom: str = "-0.9rem",
+) -> None:
     """Render a consistent page title and optional caption."""
-    inject_app_styles()
+    inject_app_styles(content_max_width_px=content_max_width_px)
     subtitle_html = (
         f'<p class="page-caption">{escape(subtitle)}</p>' if subtitle else ""
     )
     st.markdown(
-        f'<div class="page-header"><h1 class="page-title">{escape(title)}</h1>{subtitle_html}</div>',
+        f'<div class="page-header" style="margin-top: {margin_top}; margin-bottom: {margin_bottom};"><h1 class="page-title">{escape(title)}</h1>{subtitle_html}</div>',
         unsafe_allow_html=True,
     )
 
