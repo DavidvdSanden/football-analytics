@@ -124,7 +124,14 @@ table_specs = [
         "table": "transfermarkt.player_market_values",
         "columns": "tm_player_id, valuation_date, market_value_eur, scraped_at",
         "date_columns": ["scraped_at", "valuation_date"],
-        "preview": ["tm_player_id", "valuation_date", "market_value_eur", "scraped_at"],
+        "preview": [
+            "tm_player_id",
+            "name",
+            "club_name",
+            "valuation_date",
+            "market_value_eur",
+            "scraped_at",
+        ],
     },
     {
         "label": "Latest Transfers",
@@ -204,11 +211,97 @@ for spec, tab in zip(table_specs, tabs):
         if recent_df.empty:
             st.info("No additions found in the last 7 days.")
             continue
-        preview_columns = [col for col in spec["preview"] if col in recent_df.columns]
+
+        display_df = recent_df
+        if spec["table"] == "transfermarkt.player_market_values":
+            players_df = loaded_tables.get("transfermarkt.players", pd.DataFrame())
+            clubs_df = loaded_tables.get("transfermarkt.clubs", pd.DataFrame())
+            if (
+                not players_df.empty
+                and "tm_player_id" in display_df.columns
+                and "tm_player_id" in players_df.columns
+            ):
+                player_cols = ["tm_player_id"]
+
+                if "full_name" in players_df.columns:
+                    source_name_col = "full_name"
+                elif "name" in players_df.columns:
+                    source_name_col = "name"
+                else:
+                    source_name_col = None
+
+                if source_name_col:
+                    player_cols.append(source_name_col)
+
+                player_club_col = None
+                if "current_tm_club_id" in players_df.columns:
+                    player_club_col = "current_tm_club_id"
+                elif "tm_club_id" in players_df.columns:
+                    player_club_col = "tm_club_id"
+                if player_club_col:
+                    player_cols.append(player_club_col)
+
+                player_lookup = (
+                    players_df[player_cols]
+                    .dropna(subset=["tm_player_id"])
+                    .drop_duplicates(subset=["tm_player_id"], keep="last")
+                )
+                rename_map = {}
+                if source_name_col:
+                    rename_map[source_name_col] = "name"
+                if player_club_col:
+                    rename_map[player_club_col] = "player_tm_club_id"
+                if rename_map:
+                    player_lookup = player_lookup.rename(columns=rename_map)
+
+                display_df = display_df.merge(
+                    player_lookup,
+                    on="tm_player_id",
+                    how="left",
+                )
+
+                if (
+                    "player_tm_club_id" in display_df.columns
+                    and not clubs_df.empty
+                    and "tm_club_id" in clubs_df.columns
+                    and "club_name" in clubs_df.columns
+                ):
+                    display_df["player_tm_club_id"] = pd.to_numeric(
+                        display_df["player_tm_club_id"], errors="coerce"
+                    ).astype("Int64")
+                    club_lookup = (
+                        clubs_df[["tm_club_id", "club_name"]]
+                        .dropna(subset=["tm_club_id", "club_name"])
+                        .drop_duplicates(subset=["tm_club_id"], keep="last")
+                        .rename(columns={"tm_club_id": "player_tm_club_id"})
+                    )
+                    club_lookup["player_tm_club_id"] = pd.to_numeric(
+                        club_lookup["player_tm_club_id"], errors="coerce"
+                    ).astype("Int64")
+                    display_df = display_df.merge(
+                        club_lookup,
+                        on="player_tm_club_id",
+                        how="left",
+                    )
+
+        preview_columns = [col for col in spec["preview"] if col in display_df.columns]
+        sort_column = next(
+            (col for col in spec["date_columns"] if col in display_df.columns),
+            preview_columns[-1],
+        )
+        table_preview = (
+            display_df[preview_columns]
+            .sort_values(by=sort_column, ascending=False)
+            .head(200)
+            .copy()
+        )
+        if "market_value_eur" in table_preview.columns:
+            numeric_values = pd.to_numeric(table_preview["market_value_eur"], errors="coerce")
+            table_preview["market_value_eur"] = numeric_values.apply(
+                lambda value: f"{int(value):,}".replace(",", ".") if pd.notna(value) else ""
+            )
         st.dataframe(
-            recent_df[preview_columns]
-            .sort_values(by=preview_columns[-1], ascending=False)
-            .head(200),
+            table_preview,
             use_container_width=True,
             hide_index=True,
         )
