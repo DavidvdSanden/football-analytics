@@ -5,7 +5,7 @@ import importlib.util
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -81,10 +81,10 @@ def main() -> int:
     if args.dry_run:
         os.environ["TRANSFERMARKT_DRY_RUN"] = "true"
 
-    started_at = datetime.utcnow()
+    started_at = datetime.now(UTC)
     scraper = TransfermarktScraper(config=TransfermarktConfig())
     summary = scraper.scrape()
-    finished_at = datetime.utcnow()
+    finished_at = datetime.now(UTC)
 
     summary["started_at_utc"] = started_at.isoformat(timespec="seconds")
     summary["finished_at_utc"] = finished_at.isoformat(timespec="seconds")

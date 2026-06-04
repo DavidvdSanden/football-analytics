@@ -263,6 +263,32 @@ def upsert_rows(
         if isinstance(conflict_columns, str)
         else list(conflict_columns)
     )
+
+    def _make_hashable(value):
+        if isinstance(value, dict):
+            return tuple(sorted((k, _make_hashable(v)) for k, v in value.items()))
+        if isinstance(value, (list, tuple)):
+            return tuple(_make_hashable(v) for v in value)
+        if isinstance(value, set):
+            return tuple(sorted(_make_hashable(v) for v in value))
+        try:
+            hash(value)
+        except TypeError:
+            return repr(value)
+        return value
+
+    # Postgres raises "ON CONFLICT DO UPDATE command cannot affect row a second time"
+    # when the same conflict key appears multiple times in one INSERT statement.
+    deduped_rows_by_key: dict[tuple, dict] = {}
+    key_order: list[tuple] = []
+    for row in rows:
+        conflict_key = tuple(_make_hashable(row.get(col)) for col in conflict_cols)
+        if conflict_key not in deduped_rows_by_key:
+            key_order.append(conflict_key)
+        deduped_rows_by_key[conflict_key] = row
+
+    rows = [deduped_rows_by_key[key] for key in key_order]
+
     columns = list(rows[0].keys())
     values = [[row.get(col) for col in columns] for row in rows]
     update_cols = [c for c in columns if c not in conflict_cols]
