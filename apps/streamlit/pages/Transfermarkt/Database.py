@@ -73,7 +73,9 @@ def _last_timestamp(df: pd.DataFrame, date_columns: list[str]) -> tuple[str, str
     return "N/A", "N/A"
 
 
-def _recent_rows(df: pd.DataFrame, date_columns: list[str], cutoff: pd.Timestamp) -> pd.DataFrame:
+def _recent_rows(
+    df: pd.DataFrame, date_columns: list[str], cutoff: pd.Timestamp
+) -> pd.DataFrame:
     for date_column in date_columns:
         if date_column not in df.columns:
             continue
@@ -296,9 +298,22 @@ for spec, tab in zip(table_specs, tabs):
             .copy()
         )
         if "market_value_eur" in table_preview.columns:
-            numeric_values = pd.to_numeric(table_preview["market_value_eur"], errors="coerce")
+            numeric_values = pd.to_numeric(
+                table_preview["market_value_eur"], errors="coerce"
+            )
             table_preview["market_value_eur"] = numeric_values.apply(
-                lambda value: f"{int(value):,}".replace(",", ".") if pd.notna(value) else ""
+                lambda value: (
+                    f"{int(value):,}".replace(",", ".") if pd.notna(value) else ""
+                )
+            )
+        if "transfer_fee_eur" in table_preview.columns:
+            numeric_values = pd.to_numeric(
+                table_preview["transfer_fee_eur"], errors="coerce"
+            )
+            table_preview["transfer_fee_eur"] = numeric_values.apply(
+                lambda value: (
+                    f"{int(value):,}".replace(",", ".") if pd.notna(value) else ""
+                )
             )
         st.dataframe(
             table_preview,
@@ -306,4 +321,6 @@ for spec, tab in zip(table_specs, tabs):
             hide_index=True,
         )
 
-st.dataframe(pd.DataFrame(recent_summary_rows), use_container_width=True, hide_index=True)
+st.dataframe(
+    pd.DataFrame(recent_summary_rows), use_container_width=True, hide_index=True
+)
