@@ -1,12 +1,50 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
-from football_analytics.scrapers.transfermarkt import TransfermarktConfig, TransfermarktScraper
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_PATH = PROJECT_ROOT / "src"
+
+
+def _load_transfermarkt_module_from_src():
+    module_path = SRC_PATH / "football_analytics" / "scrapers" / "transfermarkt.py"
+    module_name = "transfermarkt_src_runtime"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not load transfermarkt module from {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+transfermarkt_module = _load_transfermarkt_module_from_src()
+TransfermarktConfig = transfermarkt_module.TransfermarktConfig
+TransfermarktScraper = transfermarkt_module.TransfermarktScraper
+
+# Central place for script-level tuning without changing CLI flags.
+# Set values to None to keep existing environment/default behavior.
+SCRIPT_RUNTIME_OVERRIDES: dict[str, str | bool | None] = {
+    "TRANSFERMARKT_TRANSFERS_SPLIT_BY_CITIZENSHIP": True,
+    "TRANSFERMARKT_MIN_MARKTWERT": "100000",
+}
+
+
+def apply_script_runtime_overrides() -> None:
+    for env_key, value in SCRIPT_RUNTIME_OVERRIDES.items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            os.environ[env_key] = "true" if value else "false"
+        else:
+            os.environ[env_key] = str(value)
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,6 +70,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+
+    # Apply script defaults first; explicit CLI args below still take precedence.
+    apply_script_runtime_overrides()
+
+    print(f"Using transfermarkt module: {transfermarkt_module.__file__}")
 
     if args.max_pages is not None:
         os.environ["TRANSFERMARKT_MAX_PAGES"] = args.max_pages

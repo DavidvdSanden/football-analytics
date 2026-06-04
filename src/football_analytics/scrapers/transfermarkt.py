@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -42,10 +42,14 @@ class TransfermarktConfig:
         )
     )
     accept_language: str = field(
-        default_factory=lambda: os.getenv("TRANSFERMARKT_ACCEPT_LANGUAGE", "en-US,en;q=0.9")
+        default_factory=lambda: os.getenv(
+            "TRANSFERMARKT_ACCEPT_LANGUAGE", "en-US,en;q=0.9"
+        )
     )
     referer_url: str = field(
-        default_factory=lambda: os.getenv("TRANSFERMARKT_REFERER", "https://www.transfermarkt.com/")
+        default_factory=lambda: os.getenv(
+            "TRANSFERMARKT_REFERER", "https://www.transfermarkt.com/"
+        )
     )
     min_delay_seconds: float = field(
         default_factory=lambda: float(os.getenv("TRANSFERMARKT_MIN_DELAY", "2.0"))
@@ -69,9 +73,13 @@ class TransfermarktConfig:
         default_factory=lambda: int(os.getenv("TRANSFERMARKT_BATCH_SIZE", "200"))
     )
     max_429_before_stop: int = field(
-        default_factory=lambda: int(os.getenv("TRANSFERMARKT_429_CIRCUIT_BREAKER", "20"))
+        default_factory=lambda: int(
+            os.getenv("TRANSFERMARKT_429_CIRCUIT_BREAKER", "20")
+        )
     )
-    dry_run: bool = field(default_factory=lambda: _env_bool("TRANSFERMARKT_DRY_RUN", False))
+    dry_run: bool = field(
+        default_factory=lambda: _env_bool("TRANSFERMARKT_DRY_RUN", False)
+    )
     db_schema: str = field(
         default_factory=lambda: os.getenv("TRANSFERMARKT_DB_SCHEMA", "transfermarkt")
     )
@@ -84,6 +92,9 @@ class TransfermarktConfig:
     profile_enrich_limit: str = field(
         default_factory=lambda: os.getenv("TRANSFERMARKT_PROFILE_ENRICH_LIMIT", "all")
     )
+    min_marktwert: str = field(
+        default_factory=lambda: os.getenv("TRANSFERMARKT_MIN_MARKTWERT", "0")
+    )
     latest_transfers_url: str = field(
         default_factory=lambda: os.getenv(
             "TRANSFERMARKT_LATEST_TRANSFERS_URL",
@@ -92,6 +103,11 @@ class TransfermarktConfig:
     )
     latest_transfers_max_pages: str = field(
         default_factory=lambda: os.getenv("TRANSFERMARKT_TRANSFERS_MAX_PAGES", "all")
+    )
+    latest_transfers_split_by_citizenship: bool = field(
+        default_factory=lambda: _env_bool(
+            "TRANSFERMARKT_TRANSFERS_SPLIT_BY_CITIZENSHIP", False
+        )
     )
 
     def max_pages_int(self) -> int | None:
@@ -112,11 +128,24 @@ class TransfermarktConfig:
             return None
         return max(int(value), 1)
 
+    def min_marktwert_query_value(self) -> str:
+        raw = (self.min_marktwert or "").strip()
+        if not raw:
+            return "0"
+        digits = re.sub(r"\D", "", raw)
+        if not digits:
+            return "0"
+        return f"{int(digits):,}".replace(",", ".")
+
 
 class TransfermarktScraper:
     """Scrape Transfermarkt market value changes with ethical request pacing."""
 
-    def __init__(self, config: TransfermarktConfig | None = None, logger: logging.Logger | None = None):
+    def __init__(
+        self,
+        config: TransfermarktConfig | None = None,
+        logger: logging.Logger | None = None,
+    ):
         self.config = config or TransfermarktConfig()
         self.session = self._create_session()
         self._last_request_ts: float | None = None
@@ -149,22 +178,26 @@ class TransfermarktScraper:
         self._did_warmup = False
 
     def _build_start_url_candidates(self) -> list[str]:
-        candidates = [self.config.base_url]
+        candidates = [self._with_min_marktwert(self.config.base_url)]
 
         if not self.config.base_url.endswith("/"):
-            candidates.append(f"{self.config.base_url}/")
+            candidates.append(self._with_min_marktwert(f"{self.config.base_url}/"))
 
         # The filtered URL variant often avoids unstable responses on the default landing page.
         candidates.append(
             "https://www.transfermarkt.com/spieler-statistik/marktwertaenderungen/"
             "marktwertetop/?plus=1&galerie=0&position=alle&spielerposition_id=0&"
             "spieler_land_id=0&verein_land_id=&wettbewerb_id=alle&alter=16+-+45&"
-            "filtern_nach_alter=16%3B45&minAlter=16&maxAlter=45&minMarktwert=100.000&"
+            f"filtern_nach_alter=16%3B45&minAlter=16&maxAlter=45&minMarktwert={self.config.min_marktwert_query_value()}&"
             "maxMarktwert=200.000.000&yt0=Show"
         )
 
         if self.config.fallback_start_urls.strip():
-            env_urls = [u.strip() for u in self.config.fallback_start_urls.split(",") if u.strip()]
+            env_urls = [
+                self._with_min_marktwert(u.strip())
+                for u in self.config.fallback_start_urls.split(",")
+                if u.strip()
+            ]
             candidates.extend(env_urls)
 
         unique: list[str] = []
@@ -172,6 +205,33 @@ class TransfermarktScraper:
             if url not in unique:
                 unique.append(url)
         return unique
+
+    @staticmethod
+    def _with_query_params(url: str, updates: dict[str, str]) -> str:
+        parsed = urlparse(url)
+        pairs = parse_qsl(parsed.query, keep_blank_values=True)
+        query: dict[str, list[str]] = {}
+        for key, value in pairs:
+            query.setdefault(key, []).append(value)
+        for key, value in updates.items():
+            query[key] = [value]
+        new_query = urlencode(query, doseq=True)
+        return urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc,
+                parsed.path,
+                parsed.params,
+                new_query,
+                parsed.fragment,
+            )
+        )
+
+    def _with_min_marktwert(self, url: str) -> str:
+        return self._with_query_params(
+            url,
+            {"minMarktwert": self.config.min_marktwert_query_value()},
+        )
 
     def _build_logger(self) -> logging.Logger:
         logger = logging.getLogger("transfermarkt_scraper")
@@ -181,7 +241,9 @@ class TransfermarktScraper:
         logger.setLevel(logging.INFO)
         log_dir = Path("logs")
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"transfermarkt_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        log_path = (
+            log_dir / f"transfermarkt_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        )
 
         formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
 
@@ -222,7 +284,9 @@ class TransfermarktScraper:
             self._wait_for_rate_limit()
             try:
                 if page_num > 1 and attempt == 1:
-                    self._reset_session(referer_url=referer_url or self.config.referer_url)
+                    self._reset_session(
+                        referer_url=referer_url or self.config.referer_url
+                    )
 
                 if not self._did_warmup:
                     warmup_url = self.config.referer_url
@@ -257,11 +321,19 @@ class TransfermarktScraper:
                 response.raise_for_status()
                 self.session.headers["Referer"] = response.url
                 return response
-            except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as exc:
+            except (
+                requests.ConnectionError,
+                requests.Timeout,
+                requests.HTTPError,
+            ) as exc:
                 last_error = exc
                 backoff = self.config.backoff_base_seconds * (2 ** (attempt - 1))
-                status_code = getattr(getattr(exc, "response", None), "status_code", None)
-                if isinstance(exc, requests.Timeout) or (status_code is not None and status_code >= 500):
+                status_code = getattr(
+                    getattr(exc, "response", None), "status_code", None
+                )
+                if isinstance(exc, requests.Timeout) or (
+                    status_code is not None and status_code >= 500
+                ):
                     self._reset_session(
                         referer_url=referer_url or self.config.referer_url
                     )
@@ -275,7 +347,9 @@ class TransfermarktScraper:
                 )
                 time.sleep(backoff)
 
-        raise RuntimeError(f"Failed to fetch page {page_num} after retries") from last_error
+        raise RuntimeError(
+            f"Failed to fetch page {page_num} after retries"
+        ) from last_error
 
     def _request_first_page(self, page_num: int) -> requests.Response:
         candidates = self._build_start_url_candidates()
@@ -301,7 +375,9 @@ class TransfermarktScraper:
                 last_error = exc
                 continue
 
-        raise RuntimeError("Failed to fetch first page from all start URL candidates") from last_error
+        raise RuntimeError(
+            "Failed to fetch first page from all start URL candidates"
+        ) from last_error
 
     @staticmethod
     def _extract_tm_id(href: str | None) -> str | None:
@@ -451,14 +527,16 @@ class TransfermarktScraper:
 
     @staticmethod
     def _extract_next_url(soup: BeautifulSoup, page: int) -> str | None:
-        next_link = soup.select_one("a.tm-pagination__link--icon-next") or soup.select_one(
-            "a[rel='next']"
-        )
+        next_link = soup.select_one(
+            "a.tm-pagination__link--icon-next"
+        ) or soup.select_one("a[rel='next']")
         if next_link and next_link.get("href"):
             return make_transfermarkt_full_url(next_link.get("href"))
 
         page_links: list[tuple[int, str]] = []
-        for anchor in soup.select(".tm-pagination a, div.tm-pagination a, ul.tm-pagination a"):
+        for anchor in soup.select(
+            ".tm-pagination a, div.tm-pagination a, ul.tm-pagination a"
+        ):
             href = anchor.get("href")
             page_num = TransfermarktScraper._extract_page_number(href)
             if href and page_num is not None and page_num > page:
@@ -470,7 +548,9 @@ class TransfermarktScraper:
         next_href = min(page_links, key=lambda x: x[0])[1]
         return make_transfermarkt_full_url(next_href)
 
-    def _parse_page(self, html: str, page: int) -> tuple[list[dict[str, Any]], str | None]:
+    def _parse_page(
+        self, html: str, page: int
+    ) -> tuple[list[dict[str, Any]], str | None]:
         soup = BeautifulSoup(html, "lxml")
         table = (
             soup.select_one("table.items")
@@ -507,9 +587,14 @@ class TransfermarktScraper:
                 if len(trs) > 1:
                     position = trs[1].get_text(" ", strip=True)
 
-            nationality = ", ".join(
-                img.get("title") for img in cells[1].select("img") if img.get("title")
-            ) or None
+            nationality = (
+                ", ".join(
+                    img.get("title")
+                    for img in cells[1].select("img")
+                    if img.get("title")
+                )
+                or None
+            )
             age = self._parse_age(cells[2].get_text(strip=True))
 
             club_anchor = cells[3].select_one("a")
@@ -547,7 +632,9 @@ class TransfermarktScraper:
                     percentage_raw.replace("%", "").replace(",", ".").strip()
                 )
                 try:
-                    percentage_value = float(percentage_clean) if percentage_clean else None
+                    percentage_value = (
+                        float(percentage_clean) if percentage_clean else None
+                    )
                 except ValueError:
                     percentage_value = None
 
@@ -560,14 +647,18 @@ class TransfermarktScraper:
                     "age": age,
                     "club_tm_id": club_tm_id,
                     "club_name": club_name,
-                    "player_image_url": player_image.get("src") if player_image else None,
-                    "player_profile_url": make_transfermarkt_full_url(player_href)
-                    if player_href
-                    else None,
+                    "player_image_url": (
+                        player_image.get("src") if player_image else None
+                    ),
+                    "player_profile_url": (
+                        make_transfermarkt_full_url(player_href)
+                        if player_href
+                        else None
+                    ),
                     "club_badge_url": club_img.get("src") if club_img else None,
-                    "club_profile_url": make_transfermarkt_full_url(club_href)
-                    if club_href
-                    else None,
+                    "club_profile_url": (
+                        make_transfermarkt_full_url(club_href) if club_href else None
+                    ),
                     "new_market_value_raw": new_mv_raw,
                     "old_market_value_raw": old_mv_raw,
                     "difference_raw": diff_raw,
@@ -596,7 +687,9 @@ class TransfermarktScraper:
         if table is None:
             self.logger.warning("No latest transfers table found on page %s", page)
             title = soup.title.get_text(strip=True) if soup.title else "n/a"
-            self.logger.warning("Unexpected HTML title on latest transfers page %s: %s", page, title)
+            self.logger.warning(
+                "Unexpected HTML title on latest transfers page %s: %s", page, title
+            )
             return [], None
 
         headers = [
@@ -632,7 +725,9 @@ class TransfermarktScraper:
                 return cells[index]
 
             player_cell = _cell(idx_player)
-            player_inline = player_cell.select_one("table.inline-table") if player_cell else None
+            player_inline = (
+                player_cell.select_one("table.inline-table") if player_cell else None
+            )
             player_anchor = (
                 player_inline.select_one("td.hauptlink a") if player_inline else None
             )
@@ -650,23 +745,35 @@ class TransfermarktScraper:
                     position = trs[1].get_text(" ", strip=True)
 
             nationality_cell = _cell(idx_nationality)
-            nationality = ", ".join(
-                img.get("title")
-                for img in nationality_cell.select("img")
-                if img.get("title")
-            ) if nationality_cell else None
+            nationality = (
+                ", ".join(
+                    img.get("title")
+                    for img in nationality_cell.select("img")
+                    if img.get("title")
+                )
+                if nationality_cell
+                else None
+            )
             if not nationality and nationality_cell:
-                nationality = self._normalize_text(nationality_cell.get_text(" ", strip=True))
+                nationality = self._normalize_text(
+                    nationality_cell.get_text(" ", strip=True)
+                )
 
             age_cell = _cell(idx_age)
-            age = self._parse_age(age_cell.get_text(" ", strip=True)) if age_cell else None
+            age = (
+                self._parse_age(age_cell.get_text(" ", strip=True))
+                if age_cell
+                else None
+            )
 
             from_cell = _cell(idx_from)
             from_anchor = from_cell.select_one("a") if from_cell else None
             from_club_name = None
             from_club_href = None
             if from_anchor:
-                from_club_name = from_anchor.get("title") or from_anchor.get_text(strip=True)
+                from_club_name = from_anchor.get("title") or from_anchor.get_text(
+                    strip=True
+                )
                 from_club_href = from_anchor.get("href")
             if not from_club_name and from_cell:
                 from_img = from_cell.select_one("img")
@@ -687,16 +794,22 @@ class TransfermarktScraper:
 
             fee_cell = _cell(idx_fee)
             transfer_fee_raw = (
-                self._normalize_text(fee_cell.get_text(" ", strip=True)) if fee_cell else None
+                self._normalize_text(fee_cell.get_text(" ", strip=True))
+                if fee_cell
+                else None
             )
             date_cell = _cell(idx_date)
             transfer_date_raw = (
-                self._normalize_text(date_cell.get_text(" ", strip=True)) if date_cell else None
+                self._normalize_text(date_cell.get_text(" ", strip=True))
+                if date_cell
+                else None
             )
 
             mv_cell = _cell(idx_market_value)
             market_value_raw = (
-                self._normalize_text(mv_cell.get_text(" ", strip=True)) if mv_cell else None
+                self._normalize_text(mv_cell.get_text(" ", strip=True))
+                if mv_cell
+                else None
             )
 
             row_uid = self._build_transfer_uid(
@@ -713,23 +826,33 @@ class TransfermarktScraper:
                     "transfer_uid": row_uid,
                     "tm_player_id": self._to_int(player_tm_id),
                     "player_name": player_name or "Unknown Player",
-                    "player_profile_url": make_transfermarkt_full_url(player_href)
-                    if player_href
-                    else None,
-                    "player_image_url": player_image.get("src") if player_image else None,
+                    "player_profile_url": (
+                        make_transfermarkt_full_url(player_href)
+                        if player_href
+                        else None
+                    ),
+                    "player_image_url": (
+                        player_image.get("src") if player_image else None
+                    ),
                     "age": age,
                     "position": position,
                     "nationality": nationality,
-                    "from_tm_club_id": self._to_int(self._extract_tm_id(from_club_href)),
+                    "from_tm_club_id": self._to_int(
+                        self._extract_tm_id(from_club_href)
+                    ),
                     "from_club_name": from_club_name,
-                    "from_club_profile_url": make_transfermarkt_full_url(from_club_href)
-                    if from_club_href
-                    else None,
+                    "from_club_profile_url": (
+                        make_transfermarkt_full_url(from_club_href)
+                        if from_club_href
+                        else None
+                    ),
                     "to_tm_club_id": self._to_int(self._extract_tm_id(to_club_href)),
                     "to_club_name": to_club_name,
-                    "to_club_profile_url": make_transfermarkt_full_url(to_club_href)
-                    if to_club_href
-                    else None,
+                    "to_club_profile_url": (
+                        make_transfermarkt_full_url(to_club_href)
+                        if to_club_href
+                        else None
+                    ),
                     "market_value_eur": self._parse_market_value_eur(market_value_raw),
                     "market_value_raw": market_value_raw,
                     "transfer_fee_eur": self._parse_market_value_eur(transfer_fee_raw),
@@ -803,10 +926,14 @@ class TransfermarktScraper:
                     "preferred_foot": pairs.get("Foot"),
                     "main_position": player.get("position"),
                     "detailed_position": pairs.get("Position"),
-                    "current_tm_club_id": str(player.get("club_tm_id"))
-                    if player.get("club_tm_id")
-                    else None,
-                    "joined_current_club_on": self._parse_changed_on(pairs.get("Joined")),
+                    "current_tm_club_id": (
+                        str(player.get("club_tm_id"))
+                        if player.get("club_tm_id")
+                        else None
+                    ),
+                    "joined_current_club_on": self._parse_changed_on(
+                        pairs.get("Joined")
+                    ),
                     "contract_expires_on": self._parse_changed_on(
                         pairs.get("Contract expires")
                     ),
@@ -822,7 +949,9 @@ class TransfermarktScraper:
             )
 
         if updates:
-            upsert_rows(self._table("players"), updates, conflict_columns="tm_player_id")
+            upsert_rows(
+                self._table("players"), updates, conflict_columns="tm_player_id"
+            )
         return len(updates)
 
     def _enrich_club_profiles(self, clubs_to_enrich: list[dict[str, Any]]) -> int:
@@ -844,35 +973,51 @@ class TransfermarktScraper:
             soup = BeautifulSoup(response.text, "lxml")
 
             official_name = self._normalize_text(
-                (soup.select_one("[itemprop='legalName']") or soup.select_one(".info-table .info-table__content--bold"))
-                .get_text(" ", strip=True)
-                if (soup.select_one("[itemprop='legalName']") or soup.select_one(".info-table .info-table__content--bold"))
+                (
+                    soup.select_one("[itemprop='legalName']")
+                    or soup.select_one(".info-table .info-table__content--bold")
+                ).get_text(" ", strip=True)
+                if (
+                    soup.select_one("[itemprop='legalName']")
+                    or soup.select_one(".info-table .info-table__content--bold")
+                )
                 else None
             )
             founded_on = self._parse_changed_on(
                 self._normalize_text(
-                    soup.select_one("[itemprop='foundingDate']").get_text(" ", strip=True)
+                    soup.select_one("[itemprop='foundingDate']").get_text(
+                        " ", strip=True
+                    )
                     if soup.select_one("[itemprop='foundingDate']")
                     else None
                 )
             )
             address_values = [
                 self._normalize_text(node.get_text(" ", strip=True))
-                for node in soup.select("[itemprop='address'] .info-table__content--bold")
+                for node in soup.select(
+                    "[itemprop='address'] .info-table__content--bold"
+                )
             ]
             address_values = [value for value in address_values if value]
-            crest = soup.select_one(".dataBild img") or soup.select_one(".data-header__profile-container img")
+            crest = soup.select_one(".dataBild img") or soup.select_one(
+                ".data-header__profile-container img"
+            )
 
             updates.append(
                 {
                     "tm_club_id": club_id,
                     "club_name": club.get("club_name") or "Unknown Club",
-                    "country": address_values[-1] if address_values else club.get("country"),
+                    "country": (
+                        address_values[-1] if address_values else club.get("country")
+                    ),
                     "official_name": official_name,
                     "founded_on": founded_on,
-                    "address_raw": " | ".join(address_values) if address_values else None,
+                    "address_raw": (
+                        " | ".join(address_values) if address_values else None
+                    ),
                     "city": address_values[0] if address_values else None,
-                    "crest_url": club.get("club_badge_url") or (crest.get("src") if crest else None),
+                    "crest_url": club.get("club_badge_url")
+                    or (crest.get("src") if crest else None),
                     "profile_url": profile_url,
                     "profile_last_scraped_at": datetime.utcnow().replace(microsecond=0),
                     "scraped_at": datetime.utcnow().replace(microsecond=0),
@@ -883,7 +1028,9 @@ class TransfermarktScraper:
             upsert_rows(self._table("clubs"), updates, conflict_columns="tm_club_id")
         return len(updates)
 
-    def _enrich_profiles_for_rows(self, parsed_rows: list[dict[str, Any]]) -> dict[str, int]:
+    def _enrich_profiles_for_rows(
+        self, parsed_rows: list[dict[str, Any]]
+    ) -> dict[str, int]:
         if not self.config.enrich_profiles:
             return {"player_profiles": 0, "club_profiles": 0}
 
@@ -901,11 +1048,21 @@ class TransfermarktScraper:
 
         player_ids = list(unique_players.keys())
         club_ids = list(unique_clubs.keys())
-        missing_player_ids = self._select_ids_missing_profile("players", "tm_player_id", player_ids)
-        missing_club_ids = self._select_ids_missing_profile("clubs", "tm_club_id", club_ids)
+        missing_player_ids = self._select_ids_missing_profile(
+            "players", "tm_player_id", player_ids
+        )
+        missing_club_ids = self._select_ids_missing_profile(
+            "clubs", "tm_club_id", club_ids
+        )
 
-        players_to_enrich = [unique_players[player_id] for player_id in player_ids if player_id in missing_player_ids]
-        clubs_to_enrich = [unique_clubs[club_id] for club_id in club_ids if club_id in missing_club_ids]
+        players_to_enrich = [
+            unique_players[player_id]
+            for player_id in player_ids
+            if player_id in missing_player_ids
+        ]
+        clubs_to_enrich = [
+            unique_clubs[club_id] for club_id in club_ids if club_id in missing_club_ids
+        ]
 
         if limit is not None:
             players_to_enrich = players_to_enrich[:limit]
@@ -1013,10 +1170,54 @@ class TransfermarktScraper:
         )
         return len(transfer_rows)
 
-    def _scrape_latest_transfers(self) -> dict[str, int]:
+    def _fetch_citizenship_ids(self) -> list[tuple[int, str]]:
+        """Fetch the citizenship <select> from the latest transfers page and return (id, name) pairs."""
+        response = self._request_with_retries(
+            self._with_min_marktwert(self.config.latest_transfers_url),
+            1,
+            referer_url=self.config.referer_url,
+        )
+        soup = BeautifulSoup(response.text, "lxml")
+
+        # The citizenship filter select has name="land_id" (distinct from verein_land_id)
+        # Prefer the second occurrence - first is "Clubs from", second is "Citizenship"
+        selects = soup.find_all("select", {"name": "land_id"})
+        citizenship_select = (
+            selects[1] if len(selects) >= 2 else (selects[0] if selects else None)
+        )
+
+        if citizenship_select is None:
+            self.logger.warning(
+                "Could not locate citizenship select on latest transfers page."
+            )
+            return []
+
+        result: list[tuple[int, str]] = []
+        for option in citizenship_select.find_all("option"):
+            raw_value = option.get("value", "").strip()
+            if not raw_value or raw_value == "0":
+                continue
+            try:
+                country_name = option.get_text(strip=True)
+                result.append((int(raw_value), country_name))
+                self.logger.info(
+                    "Citizenship option extracted: %s (land_id=%s)",
+                    country_name,
+                    raw_value,
+                )
+            except ValueError:
+                continue
+
+        self.logger.info(
+            "Found %s citizenship options on latest transfers page.", len(result)
+        )
+        return result
+
+    def _scrape_latest_transfers_from_url(self, start_url: str) -> tuple[int, int, int]:
+        """Scrape one paginated latest-transfers URL. Returns (pages, rows_parsed, upserted)."""
         page = 1
         max_pages = self.config.latest_transfers_max_pages_int()
-        current_url = self.config.latest_transfers_url
+        current_url = start_url
         previous_response_url = self.config.referer_url
         total_rows = 0
         total_upserted = 0
@@ -1036,7 +1237,12 @@ class TransfermarktScraper:
                 source_url=response.url,
             )
             total_rows += len(parsed_rows)
-            self.logger.info("Latest transfers page %s parsed: %s rows", page, len(parsed_rows))
+            self.logger.info(
+                "Latest transfers [%s] page %s parsed: %s rows",
+                start_url,
+                page,
+                len(parsed_rows),
+            )
             previous_response_url = response.url
 
             if not parsed_rows:
@@ -1055,8 +1261,69 @@ class TransfermarktScraper:
                 break
             current_url = next_url
 
+        return page - 1, total_rows, total_upserted
+
+    def _scrape_latest_transfers(self) -> dict[str, int]:
+        base_url = self._with_min_marktwert(self.config.latest_transfers_url)
+        urls = [base_url]
+
+        self.logger.info(
+            "Latest transfers citizenship split selected: %s",
+            self.config.latest_transfers_split_by_citizenship,
+        )
+
+        if self.config.latest_transfers_split_by_citizenship:
+            # Split by citizenship: for each country fetch its own paginated result set.
+            # Each country gets the full 10-page cap (~25 rows/page) independently,
+            # so no country's transfers are truncated by the global listing limit.
+            citizenship_ids = self._fetch_citizenship_ids()
+            if not citizenship_ids:
+                self.logger.warning(
+                    "No citizenship IDs found; falling back to base URLs."
+                )
+            else:
+                urls = []
+                for country_id, country_name in citizenship_ids:
+                    urls.append(
+                        (
+                            self._with_query_params(
+                                base_url,
+                                {"land_id": str(country_id)},
+                            ),
+                            country_name,
+                        )
+                    )
+
+                total_pages = 0
+                total_rows = 0
+                total_upserted = 0
+                for url, country_name in urls:
+                    self.logger.info(
+                        "Citizenship selected; extracting nationality: %s", country_name
+                    )
+                    pages, rows, upserted = self._scrape_latest_transfers_from_url(url)
+                    total_pages += pages
+                    total_rows += rows
+                    total_upserted += upserted
+
+                return {
+                    "latest_transfers_pages_processed": total_pages,
+                    "latest_transfers_rows_parsed": total_rows,
+                    "latest_transfers_upserted": total_upserted,
+                }
+
+        total_pages = 0
+        total_rows = 0
+        total_upserted = 0
+
+        for url in urls:
+            pages, rows, upserted = self._scrape_latest_transfers_from_url(url)
+            total_pages += pages
+            total_rows += rows
+            total_upserted += upserted
+
         return {
-            "latest_transfers_pages_processed": page - 1,
+            "latest_transfers_pages_processed": total_pages,
             "latest_transfers_rows_parsed": total_rows,
             "latest_transfers_upserted": total_upserted,
         }
