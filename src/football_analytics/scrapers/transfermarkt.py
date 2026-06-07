@@ -509,6 +509,8 @@ class TransfermarktScraper:
         for fmt in (
             "%b %d, %Y",
             "%b %d, %y",
+            "%d/%m/%Y",
+            "%d/%m/%y",
             "%d %b %Y",
             "%d %b, %Y",
             "%d.%m.%Y",
@@ -709,15 +711,34 @@ class TransfermarktScraper:
         idx_nationality = _find_col(("nat", "citizenship"), 2)
         idx_from = _find_col(("left", "from", "old club"), 3)
         idx_to = _find_col(("joined", "to", "new club"), 4)
-        idx_fee = _find_col(("fee",), 5)
-        idx_date = _find_col(("date", "day"), -1)
-        idx_market_value = _find_col(("market value", "mv"), -1)
+        idx_fee = _find_col(("fee", "abl", "cost", "co\u00fbt", "tarif"), -1)
+        idx_date = _find_col(("date", "day", "datum", "fecha", "data"), -1)
+        idx_market_value = _find_col(
+            ("market value", "mv", "marktwert", "valor", "valeur"), -1
+        )
 
         rows: list[dict[str, Any]] = []
         for row in table.select("tr.odd, tr.even"):
             cells = row.find_all("td", recursive=False)
             if len(cells) < 6:
                 continue
+
+            # Fallbacks based on known table layouts:
+            # compact:  [player, age, nat, left, joined, fee]
+            # detailed: [player, age, nat, left, joined, date, market value, fee]
+            effective_idx_fee = idx_fee
+            effective_idx_date = idx_date
+            effective_idx_market_value = idx_market_value
+            if len(cells) >= 8:
+                if effective_idx_date < 0:
+                    effective_idx_date = 5
+                if effective_idx_market_value < 0:
+                    effective_idx_market_value = 6
+                if effective_idx_fee < 0:
+                    effective_idx_fee = 7
+            else:
+                if effective_idx_fee < 0:
+                    effective_idx_fee = 5
 
             def _cell(index: int):
                 if index < 0 or index >= len(cells):
@@ -792,20 +813,20 @@ class TransfermarktScraper:
                 if to_img:
                     to_club_name = to_img.get("title")
 
-            fee_cell = _cell(idx_fee)
+            fee_cell = _cell(effective_idx_fee)
             transfer_fee_raw = (
                 self._normalize_text(fee_cell.get_text(" ", strip=True))
                 if fee_cell
                 else None
             )
-            date_cell = _cell(idx_date)
+            date_cell = _cell(effective_idx_date)
             transfer_date_raw = (
                 self._normalize_text(date_cell.get_text(" ", strip=True))
                 if date_cell
                 else None
             )
 
-            mv_cell = _cell(idx_market_value)
+            mv_cell = _cell(effective_idx_market_value)
             market_value_raw = (
                 self._normalize_text(mv_cell.get_text(" ", strip=True))
                 if mv_cell
@@ -859,7 +880,6 @@ class TransfermarktScraper:
                     "transfer_fee_raw": transfer_fee_raw,
                     "transfer_date": self._parse_transfer_date(transfer_date_raw),
                     "source_url": source_url,
-                    "scraped_at": datetime.utcnow().replace(microsecond=0),
                 }
             )
 
@@ -1173,7 +1193,10 @@ class TransfermarktScraper:
     def _fetch_citizenship_ids(self) -> list[tuple[int, str]]:
         """Fetch the citizenship <select> from the latest transfers page and return (id, name) pairs."""
         response = self._request_with_retries(
-            self._with_min_marktwert(self.config.latest_transfers_url),
+            self._with_query_params(
+                self._with_min_marktwert(self.config.latest_transfers_url),
+                {"plus": "1"},
+            ),
             1,
             referer_url=self.config.referer_url,
         )
@@ -1264,7 +1287,10 @@ class TransfermarktScraper:
         return page - 1, total_rows, total_upserted
 
     def _scrape_latest_transfers(self) -> dict[str, int]:
-        base_url = self._with_min_marktwert(self.config.latest_transfers_url)
+        base_url = self._with_query_params(
+            self._with_min_marktwert(self.config.latest_transfers_url),
+            {"plus": "1"},
+        )
         urls = [base_url]
 
         self.logger.info(
