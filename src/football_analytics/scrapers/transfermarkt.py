@@ -1277,7 +1277,21 @@ class TransfermarktScraper:
                 chunk_size = max(1, self.config.batch_size)
                 for i in range(0, len(parsed_rows), chunk_size):
                     chunk = parsed_rows[i : i + chunk_size]
-                    total_upserted += self._persist_latest_transfers(chunk)
+                    batch_number = (i // chunk_size) + 1
+                    self.logger.info(
+                        "Upserting latest_transfers batch %s (page=%s, rows=%s).",
+                        batch_number,
+                        page,
+                        len(chunk),
+                    )
+                    upserted = self._persist_latest_transfers(chunk)
+                    total_upserted += upserted
+                    self.logger.info(
+                        "Upserted latest_transfers batch %s (page=%s, upserted=%s).",
+                        batch_number,
+                        page,
+                        upserted,
+                    )
 
             page += 1
             if not next_url:
@@ -1395,12 +1409,33 @@ class TransfermarktScraper:
                 chunk_size = max(1, self.config.batch_size)
                 for i in range(0, len(parsed_rows), chunk_size):
                     chunk = parsed_rows[i : i + chunk_size]
+                    batch_number = (i // chunk_size) + 1
+                    self.logger.info(
+                        "Upserting market-value batch %s (page=%s, rows=%s).",
+                        batch_number,
+                        page,
+                        len(chunk),
+                    )
                     result = self._persist_rows(chunk)
                     total_inserted_clubs += result["clubs"]
                     total_inserted_players += result["players"]
                     total_inserted_market_values += result["player_market_values"]
                     total_enriched_player_profiles += result["player_profiles"]
                     total_enriched_club_profiles += result["club_profiles"]
+                    self.logger.info(
+                        (
+                            "Upserted market-value batch %s (page=%s, clubs=%s, "
+                            "players=%s, player_market_values=%s, "
+                            "player_profiles=%s, club_profiles=%s)."
+                        ),
+                        batch_number,
+                        page,
+                        result["clubs"],
+                        result["players"],
+                        result["player_market_values"],
+                        result["player_profiles"],
+                        result["club_profiles"],
+                    )
 
             page += 1
             if not next_url:
