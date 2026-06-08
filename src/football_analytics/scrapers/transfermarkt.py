@@ -1061,19 +1061,40 @@ class TransfermarktScraper:
                 return False
         return True
 
+    @staticmethod
+    def _coalesce_identity_key(id_val: Any, name_val: Any) -> str | None:
+        """Return id as string when available, else normalised name, else None."""
+        raw_id = int(id_val) if id_val is not None else None
+        if raw_id is not None:
+            return str(raw_id)
+        name = (str(name_val) or "").strip().lower() if name_val is not None else None
+        return name or None
+
     def _latest_transfer_group_key(
         self,
         row: dict[str, Any],
         include_date: bool = True,
-    ) -> tuple[int, int, int, date | None] | None:
-        player_id = self._to_int(row.get("tm_player_id"))
-        from_club_id = self._to_int(row.get("from_tm_club_id"))
-        to_club_id = self._to_int(row.get("to_tm_club_id"))
-        if player_id is None or from_club_id is None or to_club_id is None:
+    ) -> tuple[str, str, str, date | None] | None:
+        """Build a string-based identity key that tolerates null numeric IDs.
+
+        Uses numeric TM ID as string when available, falls back to club/player
+        display name so that destinations like 'Retired' or 'Without Club'
+        (where to_tm_club_id IS NULL) are still grouped correctly.
+        """
+        player_key = self._coalesce_identity_key(
+            row.get("tm_player_id"), row.get("player_name")
+        )
+        from_key = self._coalesce_identity_key(
+            row.get("from_tm_club_id"), row.get("from_club_name")
+        )
+        to_key = self._coalesce_identity_key(
+            row.get("to_tm_club_id"), row.get("to_club_name")
+        )
+        if player_key is None or from_key is None or to_key is None:
             return None
 
         transfer_date = row.get("transfer_date") if include_date else None
-        return (player_id, from_club_id, to_club_id, transfer_date)
+        return (player_key, from_key, to_key, transfer_date)
 
     def _latest_transfer_completeness(self, row: dict[str, Any]) -> int:
         fields = [
@@ -1114,9 +1135,23 @@ class TransfermarktScraper:
             stats["new_rows"] = len(transfer_rows)
             return transfer_rows, stats
 
-        player_ids = sorted({key[0] for key in candidate_keys})
-        from_club_ids = sorted({key[1] for key in candidate_keys})
-        to_club_ids = sorted({key[2] for key in candidate_keys})
+        # Collect numeric player/from-club IDs present in the batch for DB lookup.
+        # to_tm_club_id may be null (e.g. "Retired") so we query by player+from only,
+        # then match to_key in Python using the string-based identity key.
+        player_ids_int = sorted(
+            {
+                self._to_int(row.get("tm_player_id"))
+                for row in transfer_rows
+                if self._to_int(row.get("tm_player_id")) is not None
+            }
+        )
+        from_club_ids_int = sorted(
+            {
+                self._to_int(row.get("from_tm_club_id"))
+                for row in transfer_rows
+                if self._to_int(row.get("from_tm_club_id")) is not None
+            }
+        )
 
         try:
             import psycopg2.extras
@@ -1125,30 +1160,31 @@ class TransfermarktScraper:
                 "psycopg2 is required for Postgres backend. Install with: pip install psycopg2-binary"
             ) from exc
 
-        conn = get_postgres_conn()
-        try:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    (
-                        f"SELECT transfer_uid, tm_player_id, player_name, player_profile_url, "
-                        f"player_image_url, age, position, nationality, from_tm_club_id, "
-                        f"from_club_name, from_club_profile_url, to_tm_club_id, to_club_name, "
-                        f"to_club_profile_url, market_value_eur, market_value_raw, transfer_fee_eur, "
-                        f"transfer_fee_raw, transfer_date, source_url "
-                        f"FROM {self._table('latest_transfers')} "
-                        f"WHERE tm_player_id = ANY(%s) "
-                        f"AND from_tm_club_id = ANY(%s) "
-                        f"AND to_tm_club_id = ANY(%s)"
-                    ),
-                    (player_ids, from_club_ids, to_club_ids),
-                )
-                existing_rows: list[dict[str, Any]] = list(cur.fetchall())
-        finally:
-            conn.close()
+        existing_rows: list[dict[str, Any]] = []
+        if player_ids_int and from_club_ids_int:
+            conn = get_postgres_conn()
+            try:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(
+                        (
+                            f"SELECT transfer_uid, tm_player_id, player_name, player_profile_url, "
+                            f"player_image_url, age, position, nationality, from_tm_club_id, "
+                            f"from_club_name, from_club_profile_url, to_tm_club_id, to_club_name, "
+                            f"to_club_profile_url, market_value_eur, market_value_raw, transfer_fee_eur, "
+                            f"transfer_fee_raw, transfer_date, source_url "
+                            f"FROM {self._table('latest_transfers')} "
+                            f"WHERE tm_player_id = ANY(%s) "
+                            f"AND from_tm_club_id = ANY(%s)"
+                        ),
+                        (player_ids_int, from_club_ids_int),
+                    )
+                    existing_rows = list(cur.fetchall())
+            finally:
+                conn.close()
 
-        existing_by_exact: dict[tuple[int, int, int, date | None], dict[str, Any]] = {}
+        existing_by_exact: dict[tuple[str, str, str, date | None], dict[str, Any]] = {}
         existing_grouped_by_no_date: dict[
-            tuple[int, int, int, None], list[dict[str, Any]]
+            tuple[str, str, str, None], list[dict[str, Any]]
         ] = {}
 
         for existing in existing_rows:
