@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import os
 import sys
 from datetime import UTC, datetime
@@ -82,16 +81,128 @@ def main() -> int:
         os.environ["TRANSFERMARKT_DRY_RUN"] = "true"
 
     started_at = datetime.now(UTC)
-    scraper = TransfermarktScraper(config=TransfermarktConfig())
+    config = TransfermarktConfig()
+    scraper = TransfermarktScraper(config=config)
     summary = scraper.scrape()
     finished_at = datetime.now(UTC)
+    duration = int((finished_at - started_at).total_seconds())
 
-    summary["started_at_utc"] = started_at.isoformat(timespec="seconds")
-    summary["finished_at_utc"] = finished_at.isoformat(timespec="seconds")
-    summary["duration_seconds"] = int((finished_at - started_at).total_seconds())
-
-    print(json.dumps(summary, indent=2, default=str))
+    _print_summary(summary, config, started_at, finished_at, duration, scraper.logger)
     return 0
+
+
+def _fmt(value: object) -> str:
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _row(label: str, value: object, indent: int = 2) -> str:
+    pad = " " * indent
+    return f"{pad}{label:<40} {_fmt(value)}"
+
+
+def _section(title: str) -> str:
+    return f"\n  {'─' * 50}\n  {title}\n  {'─' * 50}"
+
+
+def _print_summary(
+    summary: dict,
+    config,
+    started_at: datetime,
+    finished_at: datetime,
+    duration: int,
+    logger=None,
+) -> None:
+    dry_run = os.getenv("TRANSFERMARKT_DRY_RUN", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    split_by_citizenship = config.latest_transfers_split_by_citizenship
+    merge_enabled = config.merge_latest_transfers_on_identity
+    only_new = config.upsert_only_new_values
+
+    lines = []
+    lines.append("")
+    lines.append("  " + "═" * 50)
+    lines.append("  TRANSFERMARKT SCRAPE SUMMARY")
+    lines.append("  " + "═" * 50)
+
+    # ── Run info ────────────────────────────────────────────────
+    lines.append(_section("Run info"))
+    lines.append(_row("Started", started_at.strftime("%Y-%m-%d %H:%M:%S UTC")))
+    lines.append(_row("Finished", finished_at.strftime("%Y-%m-%d %H:%M:%S UTC")))
+    lines.append(_row("Duration", f"{duration}s"))
+    lines.append(_row("Dry run", "yes" if dry_run else "no"))
+    lines.append(_row("Start URL", summary.get("selected_start_url", "-")))
+    lines.append(_row("HTTP 429 responses", summary.get("http_429_count", 0)))
+
+    # ── Market value changes ────────────────────────────────────
+    lines.append(_section("Market value changes"))
+    lines.append(_row("Pages scraped", summary.get("pages_processed", 0)))
+    lines.append(_row("Rows parsed", summary.get("rows_parsed", 0)))
+    lines.append(_row("clubs  upserted", summary.get("clubs_upserted", 0)))
+    lines.append(_row("players  upserted", summary.get("players_upserted", 0)))
+    lines.append(
+        _row(
+            "player_market_values  upserted",
+            summary.get("player_market_values_upserted", 0),
+        )
+    )
+    upsert_mode = "only new" if only_new else "all (upsert)"
+    lines.append(_row("Upsert mode", upsert_mode))
+
+    # ── Player / club profile enrichment ────────────────────────
+    lines.append(_section("Profile enrichment"))
+    lines.append(
+        _row("Player profiles enriched", summary.get("player_profiles_enriched", 0))
+    )
+    lines.append(
+        _row("Club profiles enriched", summary.get("club_profiles_enriched", 0))
+    )
+
+    # ── Latest transfers ────────────────────────────────────────
+    lines.append(_section("Latest transfers"))
+    split_label = "by citizenship" if split_by_citizenship else "global listing"
+    lines.append(_row("Source split mode", split_label))
+    lines.append(
+        _row("Pages scraped", summary.get("latest_transfers_pages_processed", 0))
+    )
+    lines.append(_row("Rows parsed", summary.get("latest_transfers_rows_parsed", 0)))
+    lines.append(
+        _row("Total upserted (DB writes)", summary.get("latest_transfers_upserted", 0))
+    )
+    if merge_enabled:
+        lines.append(
+            _row("  — new rows inserted", summary.get("latest_transfers_new_rows", 0))
+        )
+        lines.append(
+            _row(
+                "  — existing rows enriched (merged)",
+                summary.get("latest_transfers_merged_updates", 0),
+            )
+        )
+        lines.append(
+            _row(
+                "  — unchanged (skipped)",
+                summary.get("latest_transfers_unchanged_existing", 0),
+            )
+        )
+    else:
+        lines.append(_row("Merge-on-identity", "disabled"))
+
+    lines.append("")
+    lines.append("  " + "═" * 50)
+    lines.append("")
+
+    text = "\n".join(lines)
+    if logger is not None:
+        for line in lines:
+            logger.info("%s", line)
+    else:
+        print(text)
 
 
 if __name__ == "__main__":

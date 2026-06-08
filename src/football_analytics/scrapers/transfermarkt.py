@@ -1571,11 +1571,19 @@ class TransfermarktScraper:
             "club_profiles": enrichment_counts["club_profiles"],
         }
 
-    def _persist_latest_transfers(self, transfer_rows: list[dict[str, Any]]) -> int:
+    def _persist_latest_transfers(
+        self, transfer_rows: list[dict[str, Any]]
+    ) -> dict[str, int]:
+        empty: dict[str, int] = {
+            "upserted": 0,
+            "new_rows": 0,
+            "merged_updates": 0,
+            "unchanged_existing": 0,
+        }
         if not transfer_rows:
-            return 0
+            return empty
 
-        merge_stats = {
+        merge_stats: dict[str, int] = {
             "new_rows": 0,
             "merged_updates": 0,
             "unchanged_existing": 0,
@@ -1589,18 +1597,7 @@ class TransfermarktScraper:
             transfer_rows = self._filter_existing_latest_transfer_rows(transfer_rows)
 
         if not transfer_rows:
-            if self.config.merge_latest_transfers_on_identity:
-                self.logger.info(
-                    (
-                        "Latest transfers merge summary: new_rows=%s, "
-                        "merged_updates=%s, unchanged_existing=%s, upserted=%s"
-                    ),
-                    merge_stats["new_rows"],
-                    merge_stats["merged_updates"],
-                    merge_stats["unchanged_existing"],
-                    0,
-                )
-            return 0
+            return {"upserted": 0, **merge_stats}
 
         upsert_rows(
             self._table("latest_transfers"),
@@ -1608,19 +1605,7 @@ class TransfermarktScraper:
             conflict_columns="transfer_uid",
         )
 
-        if self.config.merge_latest_transfers_on_identity:
-            self.logger.info(
-                (
-                    "Latest transfers merge summary: new_rows=%s, "
-                    "merged_updates=%s, unchanged_existing=%s, upserted=%s"
-                ),
-                merge_stats["new_rows"],
-                merge_stats["merged_updates"],
-                merge_stats["unchanged_existing"],
-                len(transfer_rows),
-            )
-
-        return len(transfer_rows)
+        return {"upserted": len(transfer_rows), **merge_stats}
 
     def _fetch_citizenship_ids(self) -> list[tuple[int, str]]:
         """Fetch the citizenship <select> from the latest transfers page and return (id, name) pairs."""
@@ -1668,14 +1653,21 @@ class TransfermarktScraper:
         )
         return result
 
-    def _scrape_latest_transfers_from_url(self, start_url: str) -> tuple[int, int, int]:
-        """Scrape one paginated latest-transfers URL. Returns (pages, rows_parsed, upserted)."""
+    def _scrape_latest_transfers_from_url(self, start_url: str) -> dict[str, int]:
+        """Scrape one paginated latest-transfers URL.
+
+        Returns a dict with pages_processed, rows_parsed, upserted,
+        new_rows, merged_updates, unchanged_existing.
+        """
         page = 1
         max_pages = self.config.latest_transfers_max_pages_int()
         current_url = start_url
         previous_response_url = self.config.referer_url
         total_rows = 0
         total_upserted = 0
+        total_new_rows = 0
+        total_merged_updates = 0
+        total_unchanged_existing = 0
 
         while True:
             if max_pages is not None and page > max_pages:
@@ -1716,13 +1708,22 @@ class TransfermarktScraper:
                         page,
                         len(chunk),
                     )
-                    upserted = self._persist_latest_transfers(chunk)
-                    total_upserted += upserted
+                    persist_result = self._persist_latest_transfers(chunk)
+                    total_upserted += persist_result["upserted"]
+                    total_new_rows += persist_result["new_rows"]
+                    total_merged_updates += persist_result["merged_updates"]
+                    total_unchanged_existing += persist_result["unchanged_existing"]
                     self.logger.info(
-                        "Upserted latest_transfers batch %s (page=%s, upserted=%s).",
+                        (
+                            "Upserted latest_transfers batch %s (page=%s, upserted=%s, "
+                            "new=%s, merged=%s, unchanged=%s)."
+                        ),
                         batch_number,
                         page,
-                        upserted,
+                        persist_result["upserted"],
+                        persist_result["new_rows"],
+                        persist_result["merged_updates"],
+                        persist_result["unchanged_existing"],
                     )
 
             page += 1
@@ -1730,7 +1731,14 @@ class TransfermarktScraper:
                 break
             current_url = next_url
 
-        return page - 1, total_rows, total_upserted
+        return {
+            "pages_processed": page - 1,
+            "rows_parsed": total_rows,
+            "upserted": total_upserted,
+            "new_rows": total_new_rows,
+            "merged_updates": total_merged_updates,
+            "unchanged_existing": total_unchanged_existing,
+        }
 
     def _scrape_latest_transfers(self) -> dict[str, int]:
         base_url = self._with_query_params(
@@ -1744,6 +1752,12 @@ class TransfermarktScraper:
             self.config.latest_transfers_split_by_citizenship,
         )
 
+        def _accumulate(acc: dict[str, int], result: dict[str, int]) -> None:
+            for key, val in result.items():
+                acc[key] = acc.get(key, 0) + val
+
+        totals: dict[str, int] = {}
+
         if self.config.latest_transfers_split_by_citizenship:
             # Split by citizenship: for each country fetch its own paginated result set.
             # Each country gets the full 10-page cap (~25 rows/page) independently,
@@ -1754,50 +1768,42 @@ class TransfermarktScraper:
                     "No citizenship IDs found; falling back to base URLs."
                 )
             else:
-                urls = []
-                for country_id, country_name in citizenship_ids:
-                    urls.append(
-                        (
-                            self._with_query_params(
-                                base_url,
-                                {"land_id": str(country_id)},
-                            ),
-                            country_name,
-                        )
+                urls = [
+                    (
+                        self._with_query_params(base_url, {"land_id": str(country_id)}),
+                        country_name,
                     )
-
-                total_pages = 0
-                total_rows = 0
-                total_upserted = 0
+                    for country_id, country_name in citizenship_ids
+                ]
                 for url, country_name in urls:
                     self.logger.info(
                         "Citizenship selected; extracting nationality: %s", country_name
                     )
-                    pages, rows, upserted = self._scrape_latest_transfers_from_url(url)
-                    total_pages += pages
-                    total_rows += rows
-                    total_upserted += upserted
+                    _accumulate(totals, self._scrape_latest_transfers_from_url(url))
 
                 return {
-                    "latest_transfers_pages_processed": total_pages,
-                    "latest_transfers_rows_parsed": total_rows,
-                    "latest_transfers_upserted": total_upserted,
+                    "latest_transfers_pages_processed": totals.get(
+                        "pages_processed", 0
+                    ),
+                    "latest_transfers_rows_parsed": totals.get("rows_parsed", 0),
+                    "latest_transfers_upserted": totals.get("upserted", 0),
+                    "latest_transfers_new_rows": totals.get("new_rows", 0),
+                    "latest_transfers_merged_updates": totals.get("merged_updates", 0),
+                    "latest_transfers_unchanged_existing": totals.get(
+                        "unchanged_existing", 0
+                    ),
                 }
 
-        total_pages = 0
-        total_rows = 0
-        total_upserted = 0
-
         for url in urls:
-            pages, rows, upserted = self._scrape_latest_transfers_from_url(url)
-            total_pages += pages
-            total_rows += rows
-            total_upserted += upserted
+            _accumulate(totals, self._scrape_latest_transfers_from_url(url))
 
         return {
-            "latest_transfers_pages_processed": total_pages,
-            "latest_transfers_rows_parsed": total_rows,
-            "latest_transfers_upserted": total_upserted,
+            "latest_transfers_pages_processed": totals.get("pages_processed", 0),
+            "latest_transfers_rows_parsed": totals.get("rows_parsed", 0),
+            "latest_transfers_upserted": totals.get("upserted", 0),
+            "latest_transfers_new_rows": totals.get("new_rows", 0),
+            "latest_transfers_merged_updates": totals.get("merged_updates", 0),
+            "latest_transfers_unchanged_existing": totals.get("unchanged_existing", 0),
         }
 
     def scrape(self) -> dict[str, int]:
