@@ -109,6 +109,14 @@ class TransfermarktConfig:
             "TRANSFERMARKT_TRANSFERS_SPLIT_BY_CITIZENSHIP", False
         )
     )
+    upsert_only_new_values: bool = field(
+        default_factory=lambda: _env_bool("TRANSFERMARKT_UPSERT_ONLY_NEW_VALUES", True)
+    )
+    merge_latest_transfers_on_identity: bool = field(
+        default_factory=lambda: _env_bool(
+            "TRANSFERMARKT_MERGE_LATEST_TRANSFERS_ON_IDENTITY", True
+        )
+    )
 
     def max_pages_int(self) -> int | None:
         value = self.max_pages.strip().lower()
@@ -152,6 +160,8 @@ class TransfermarktScraper:
         self._count_429 = 0
         self._did_warmup = False
         self._selected_start_url: str | None = None
+        self._known_market_value_keys: set[tuple[int, date]] = set()
+        self._known_latest_transfer_uids: set[str] = set()
         self.logger = logger or self._build_logger()
 
     def _create_session(self, referer_url: str | None = None) -> requests.Session:
@@ -523,8 +533,37 @@ class TransfermarktScraper:
         return None
 
     @staticmethod
-    def _build_transfer_uid(*parts: Any) -> str:
-        text = "|".join(str(part or "") for part in parts)
+    def _build_transfer_uid(
+        player_tm_id: str | int | None,
+        from_tm_club_id: str | int | None,
+        to_tm_club_id: str | int | None,
+        transfer_date,
+        *,
+        player_name: str | None = None,
+        from_club_name: str | None = None,
+        to_club_name: str | None = None,
+    ) -> str:
+        """Build a deterministic transfer UID.
+
+        Uses numeric TM IDs + parsed date when all are available, which is
+        stable regardless of how Transfermarkt formats raw fee/date text.
+        Falls back to name-based key when IDs are missing.
+        """
+        if player_tm_id and from_tm_club_id and to_tm_club_id and transfer_date:
+            date_str = (
+                transfer_date.isoformat()
+                if hasattr(transfer_date, "isoformat")
+                else str(transfer_date)
+            )
+            text = f"id:{player_tm_id}|from:{from_tm_club_id}|to:{to_tm_club_id}|date:{date_str}"
+        else:
+            parts = [
+                player_tm_id or player_name,
+                from_tm_club_id or from_club_name,
+                to_tm_club_id or to_club_name,
+                transfer_date,
+            ]
+            text = "|".join(str(part or "") for part in parts)
         return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -835,11 +874,12 @@ class TransfermarktScraper:
 
             row_uid = self._build_transfer_uid(
                 player_tm_id,
-                player_name,
-                from_club_name,
-                to_club_name,
-                transfer_fee_raw,
-                transfer_date_raw,
+                self._extract_tm_id(from_club_href),
+                self._extract_tm_id(to_club_href),
+                self._parse_transfer_date(transfer_date_raw),
+                player_name=player_name,
+                from_club_name=from_club_name,
+                to_club_name=to_club_name,
             )
 
             rows.append(
@@ -887,6 +927,299 @@ class TransfermarktScraper:
 
     def _table(self, table_name: str) -> str:
         return f"{self.config.db_schema}.{table_name}"
+
+    def _filter_existing_market_value_rows(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not rows or not self.config.upsert_only_new_values:
+            return rows
+
+        row_keys = [
+            (self._to_int(row.get("tm_player_id")), row.get("valuation_date"))
+            for row in rows
+        ]
+        keys = {key for key in row_keys if key[0] is not None and key[1] is not None}
+        if not keys:
+            return rows
+
+        unknown_keys = keys - self._known_market_value_keys
+        existing_keys: set[tuple[int, date]] = set()
+
+        if unknown_keys:
+            player_ids = sorted(
+                {player_id for player_id, _ in unknown_keys if player_id is not None}
+            )
+            valuation_dates = sorted(
+                {valuation_date for _, valuation_date in unknown_keys}
+            )
+
+            conn = get_postgres_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        (
+                            f"SELECT tm_player_id, valuation_date "
+                            f"FROM {self._table('player_market_values')} "
+                            f"WHERE tm_player_id = ANY(%s) AND valuation_date = ANY(%s)"
+                        ),
+                        (player_ids, valuation_dates),
+                    )
+                    existing_keys = {(int(row[0]), row[1]) for row in cur.fetchall()}
+            finally:
+                conn.close()
+
+            self._known_market_value_keys.update(existing_keys)
+
+        filtered_rows = [
+            row
+            for row in rows
+            if (
+                self._to_int(row.get("tm_player_id")),
+                row.get("valuation_date"),
+            )
+            not in self._known_market_value_keys
+        ]
+
+        self._known_market_value_keys.update(
+            key
+            for key in row_keys
+            if key[0] is not None
+            and key[1] is not None
+            and key not in self._known_market_value_keys
+        )
+
+        skipped = len(rows) - len(filtered_rows)
+        if skipped:
+            self.logger.info(
+                "Skipping %s existing player_market_values rows before upsert.",
+                skipped,
+            )
+        return filtered_rows
+
+    def _filter_existing_latest_transfer_rows(
+        self,
+        rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not rows or not self.config.upsert_only_new_values:
+            return rows
+
+        transfer_uids = [
+            row.get("transfer_uid") for row in rows if row.get("transfer_uid")
+        ]
+        if not transfer_uids:
+            return rows
+
+        unknown_uids = [
+            transfer_uid
+            for transfer_uid in transfer_uids
+            if transfer_uid not in self._known_latest_transfer_uids
+        ]
+
+        if unknown_uids:
+            conn = get_postgres_conn()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        (
+                            f"SELECT transfer_uid FROM {self._table('latest_transfers')} "
+                            f"WHERE transfer_uid = ANY(%s)"
+                        ),
+                        (unknown_uids,),
+                    )
+                    self._known_latest_transfer_uids.update(
+                        row[0] for row in cur.fetchall()
+                    )
+            finally:
+                conn.close()
+
+        filtered_rows = [
+            row
+            for row in rows
+            if row.get("transfer_uid") not in self._known_latest_transfer_uids
+        ]
+
+        self._known_latest_transfer_uids.update(
+            row.get("transfer_uid") for row in filtered_rows if row.get("transfer_uid")
+        )
+
+        skipped = len(rows) - len(filtered_rows)
+        if skipped:
+            self.logger.info(
+                "Skipping %s existing latest_transfers rows before upsert.",
+                skipped,
+            )
+        return filtered_rows
+
+    @staticmethod
+    def _is_informative_transfer_value(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if not text or text in {"?", "-", "n/a", "unknown"}:
+                return False
+        return True
+
+    def _latest_transfer_group_key(
+        self,
+        row: dict[str, Any],
+        include_date: bool = True,
+    ) -> tuple[int, int, int, date | None] | None:
+        player_id = self._to_int(row.get("tm_player_id"))
+        from_club_id = self._to_int(row.get("from_tm_club_id"))
+        to_club_id = self._to_int(row.get("to_tm_club_id"))
+        if player_id is None or from_club_id is None or to_club_id is None:
+            return None
+
+        transfer_date = row.get("transfer_date") if include_date else None
+        return (player_id, from_club_id, to_club_id, transfer_date)
+
+    def _latest_transfer_completeness(self, row: dict[str, Any]) -> int:
+        fields = [
+            "transfer_fee_eur",
+            "market_value_eur",
+            "transfer_date",
+            "nationality",
+            "position",
+            "age",
+            "player_name",
+            "from_club_name",
+            "to_club_name",
+        ]
+        score = 0
+        for field_name in fields:
+            if self._is_informative_transfer_value(row.get(field_name)):
+                score += 1
+        return score
+
+    def _prepare_latest_transfer_upserts(
+        self,
+        transfer_rows: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+        stats = {
+            "new_rows": 0,
+            "merged_updates": 0,
+            "unchanged_existing": 0,
+        }
+        if not transfer_rows:
+            return [], stats
+
+        candidate_keys = [
+            self._latest_transfer_group_key(row, include_date=True)
+            for row in transfer_rows
+        ]
+        candidate_keys = [key for key in candidate_keys if key is not None]
+        if not candidate_keys:
+            stats["new_rows"] = len(transfer_rows)
+            return transfer_rows, stats
+
+        player_ids = sorted({key[0] for key in candidate_keys})
+        from_club_ids = sorted({key[1] for key in candidate_keys})
+        to_club_ids = sorted({key[2] for key in candidate_keys})
+
+        try:
+            import psycopg2.extras
+        except ImportError as exc:
+            raise ImportError(
+                "psycopg2 is required for Postgres backend. Install with: pip install psycopg2-binary"
+            ) from exc
+
+        conn = get_postgres_conn()
+        try:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    (
+                        f"SELECT transfer_uid, tm_player_id, player_name, player_profile_url, "
+                        f"player_image_url, age, position, nationality, from_tm_club_id, "
+                        f"from_club_name, from_club_profile_url, to_tm_club_id, to_club_name, "
+                        f"to_club_profile_url, market_value_eur, market_value_raw, transfer_fee_eur, "
+                        f"transfer_fee_raw, transfer_date, source_url "
+                        f"FROM {self._table('latest_transfers')} "
+                        f"WHERE tm_player_id = ANY(%s) "
+                        f"AND from_tm_club_id = ANY(%s) "
+                        f"AND to_tm_club_id = ANY(%s)"
+                    ),
+                    (player_ids, from_club_ids, to_club_ids),
+                )
+                existing_rows: list[dict[str, Any]] = list(cur.fetchall())
+        finally:
+            conn.close()
+
+        existing_by_exact: dict[tuple[int, int, int, date | None], dict[str, Any]] = {}
+        existing_grouped_by_no_date: dict[
+            tuple[int, int, int, None], list[dict[str, Any]]
+        ] = {}
+
+        for existing in existing_rows:
+            exact_key = self._latest_transfer_group_key(existing, include_date=True)
+            no_date_key = self._latest_transfer_group_key(existing, include_date=False)
+            if exact_key is None or no_date_key is None:
+                continue
+
+            current_best = existing_by_exact.get(exact_key)
+            if current_best is None or (
+                self._latest_transfer_completeness(existing)
+                > self._latest_transfer_completeness(current_best)
+            ):
+                existing_by_exact[exact_key] = existing
+
+            existing_grouped_by_no_date.setdefault(no_date_key, []).append(existing)
+
+        safe_existing_by_no_date: dict[tuple[int, int, int, None], dict[str, Any]] = {}
+        for group_key, group_rows in existing_grouped_by_no_date.items():
+            non_null_dates = {
+                row.get("transfer_date")
+                for row in group_rows
+                if row.get("transfer_date") is not None
+            }
+            if len(non_null_dates) > 1:
+                continue
+            best_row = max(
+                group_rows,
+                key=lambda row: (
+                    self._latest_transfer_completeness(row),
+                    row.get("transfer_uid") or "",
+                ),
+            )
+            safe_existing_by_no_date[group_key] = best_row
+
+        upsert_rows_payload: list[dict[str, Any]] = []
+        for incoming in transfer_rows:
+            exact_key = self._latest_transfer_group_key(incoming, include_date=True)
+            no_date_key = self._latest_transfer_group_key(incoming, include_date=False)
+
+            matched_existing = None
+            if exact_key is not None:
+                matched_existing = existing_by_exact.get(exact_key)
+            if matched_existing is None and no_date_key is not None:
+                matched_existing = safe_existing_by_no_date.get(no_date_key)
+
+            if matched_existing is None:
+                stats["new_rows"] += 1
+                upsert_rows_payload.append(incoming)
+                continue
+
+            merged = dict(matched_existing)
+            for key, value in incoming.items():
+                if key == "transfer_uid":
+                    continue
+                if self._is_informative_transfer_value(value):
+                    merged[key] = value
+            merged["transfer_uid"] = matched_existing["transfer_uid"]
+
+            changed = any(
+                merged.get(key) != matched_existing.get(key)
+                for key in incoming.keys()
+                if key != "transfer_uid"
+            )
+            if changed:
+                stats["merged_updates"] += 1
+                upsert_rows_payload.append(merged)
+            else:
+                stats["unchanged_existing"] += 1
+
+        return upsert_rows_payload, stats
 
     def _select_ids_missing_profile(
         self,
@@ -1103,9 +1436,51 @@ class TransfermarktScraper:
                 "club_profiles": 0,
             }
 
+        market_rows: list[dict[str, Any]] = []
+        scrape_date = datetime.utcnow().replace(microsecond=0)
+
+        for item in parsed_rows:
+            player_id = self._to_int(item["player_tm_id"])
+            if player_id is None:
+                continue
+            valuation_date = item["changed_on"] or datetime.utcnow().date()
+
+            market_rows.append(
+                {
+                    "tm_player_id": player_id,
+                    "valuation_date": valuation_date,
+                    "market_value_eur": self._parse_market_value_eur(
+                        item["new_market_value_raw"]
+                    ),
+                    "market_value_raw": item["new_market_value_raw"],
+                    "change_direction": item.get("change_direction"),
+                    "source_url": self.config.base_url,
+                    "scraped_at": scrape_date,
+                }
+            )
+
+        market_rows = self._filter_existing_market_value_rows(market_rows)
+
+        if self.config.upsert_only_new_values:
+            new_market_value_keys = {
+                (self._to_int(row.get("tm_player_id")), row.get("valuation_date"))
+                for row in market_rows
+            }
+            rows_for_related_upserts = [
+                item
+                for item in parsed_rows
+                if (
+                    self._to_int(item.get("player_tm_id")),
+                    item.get("changed_on") or scrape_date.date(),
+                )
+                in new_market_value_keys
+            ]
+        else:
+            rows_for_related_upserts = parsed_rows
+
         clubs_map: dict[str, dict[str, Any]] = {}
         players_map: dict[str, dict[str, Any]] = {}
-        for item in parsed_rows:
+        for item in rows_for_related_upserts:
             club_id = self._to_int(item["club_tm_id"])
             player_id = self._to_int(item["player_tm_id"])
             if club_id is None or player_id is None:
@@ -1136,30 +1511,11 @@ class TransfermarktScraper:
         clubs = list(clubs_map.values())
         players = list(players_map.values())
 
-        upsert_rows(self._table("clubs"), clubs, conflict_columns="tm_club_id")
-        upsert_rows(self._table("players"), players, conflict_columns="tm_player_id")
-
-        market_rows: list[dict[str, Any]] = []
-        scrape_date = datetime.utcnow().replace(microsecond=0)
-
-        for item in parsed_rows:
-            player_id = self._to_int(item["player_tm_id"])
-            if player_id is None:
-                continue
-            valuation_date = item["changed_on"] or datetime.utcnow().date()
-
-            market_rows.append(
-                {
-                    "tm_player_id": player_id,
-                    "valuation_date": valuation_date,
-                    "market_value_eur": self._parse_market_value_eur(
-                        item["new_market_value_raw"]
-                    ),
-                    "market_value_raw": item["new_market_value_raw"],
-                    "change_direction": item.get("change_direction"),
-                    "source_url": self.config.base_url,
-                    "scraped_at": scrape_date,
-                }
+        if clubs:
+            upsert_rows(self._table("clubs"), clubs, conflict_columns="tm_club_id")
+        if players:
+            upsert_rows(
+                self._table("players"), players, conflict_columns="tm_player_id"
             )
 
         if market_rows:
@@ -1169,7 +1525,7 @@ class TransfermarktScraper:
                 conflict_columns=["tm_player_id", "valuation_date"],
             )
 
-        enrichment_counts = self._enrich_profiles_for_rows(parsed_rows)
+        enrichment_counts = self._enrich_profiles_for_rows(rows_for_related_upserts)
 
         return {
             "clubs": len(clubs),
@@ -1183,11 +1539,51 @@ class TransfermarktScraper:
         if not transfer_rows:
             return 0
 
+        merge_stats = {
+            "new_rows": 0,
+            "merged_updates": 0,
+            "unchanged_existing": 0,
+        }
+
+        if self.config.merge_latest_transfers_on_identity:
+            transfer_rows, merge_stats = self._prepare_latest_transfer_upserts(
+                transfer_rows
+            )
+        elif self.config.upsert_only_new_values:
+            transfer_rows = self._filter_existing_latest_transfer_rows(transfer_rows)
+
+        if not transfer_rows:
+            if self.config.merge_latest_transfers_on_identity:
+                self.logger.info(
+                    (
+                        "Latest transfers merge summary: new_rows=%s, "
+                        "merged_updates=%s, unchanged_existing=%s, upserted=%s"
+                    ),
+                    merge_stats["new_rows"],
+                    merge_stats["merged_updates"],
+                    merge_stats["unchanged_existing"],
+                    0,
+                )
+            return 0
+
         upsert_rows(
             self._table("latest_transfers"),
             transfer_rows,
             conflict_columns="transfer_uid",
         )
+
+        if self.config.merge_latest_transfers_on_identity:
+            self.logger.info(
+                (
+                    "Latest transfers merge summary: new_rows=%s, "
+                    "merged_updates=%s, unchanged_existing=%s, upserted=%s"
+                ),
+                merge_stats["new_rows"],
+                merge_stats["merged_updates"],
+                merge_stats["unchanged_existing"],
+                len(transfer_rows),
+            )
+
         return len(transfer_rows)
 
     def _fetch_citizenship_ids(self) -> list[tuple[int, str]]:

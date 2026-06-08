@@ -32,7 +32,7 @@ TransfermarktScraper = transfermarkt_module.TransfermarktScraper
 # Central place for script-level tuning without changing CLI flags.
 # Set values to None to keep existing environment/default behavior.
 SCRIPT_RUNTIME_OVERRIDES: dict[str, str | bool | None] = {
-    "TRANSFERMARKT_TRANSFERS_SPLIT_BY_CITIZENSHIP": True,
+    "TRANSFERMARKT_TRANSFERS_SPLIT_BY_CITIZENSHIP": None,
     "TRANSFERMARKT_MIN_MARKTWERT": "100000",
 }
 
